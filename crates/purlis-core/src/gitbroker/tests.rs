@@ -16,7 +16,14 @@ fn asker(cwd: Option<&Path>) -> Asker {
         config: None,
         id: None,
         live: None,
-        decided_as: None,
+        decided_as: crate::policy::decide::ChatFacts {
+            workspace: None,
+            persona: None,
+            sandboxed: false,
+            level: None,
+            attended: true,
+            harness_mode: None,
+        },
     }
 }
 

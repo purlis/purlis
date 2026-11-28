@@ -236,12 +236,7 @@ fn commit(
         asker,
         &at,
         crate::piececlaim::Act::Commit,
-        crate::policy::decide::GitFacts {
-            force: false,
-            skip_hooks: true,
-            brokered: true,
-            amend: false,
-        },
+        super::BROKERED,
     )?;
     crate::piececlaim::take(
         root,

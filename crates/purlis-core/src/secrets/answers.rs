@@ -1600,7 +1600,8 @@ impl Draft {
         }
     }
 
-    /// **Takes an owner record out**, as a hand-over or a press moves it ([`crate::policy::owner`]).
+    /// **Takes an owner record out**, as a hand-over or a press moves it, or a folder's record ends
+    /// (Q339.9) ([`crate::policy::owner`]).
     pub(crate) fn take_out_owner_record(&mut self, text: &str) {
         self.take_out(OWNER, text);
     }

@@ -5092,13 +5092,19 @@ write into this folder cannot make its own text arrive as the person's.
   what `context.owner` (`self`, `task`, `asker`, `other` or `none`) is computed from, by the one
   host function `policy::owner::owner`, once for the real actor. Its text is one JSON object:
   `{fact: "owns", of, chat}`, where `of` is `branch <host>/<repo>#<branch>` (a forge branch the
-  route saw the chat create) or `folder <real path>` (a branch folder whose first claim the app
-  recorded), and `chat` the owner's stable id; or `{fact: "asked", task, by}`, the chat that
+  route saw the chat create) or `folder <real path> made <device>:<inode>:<birth time in ns>` (a
+  branch folder whose first claim the app recorded, and which folder stood at that path then, so a
+  folder cut again under the name is no one's; the birth time is `0` where the system keeps
+  none), and `chat` the owner's stable id; or `{fact: "asked", task, by}`, the chat that
   dispatched `task`, from which the actor's line, up and down, is walked. **A record, once made,
   moves only by hand-over or the person's press**: a second record of the same branch or folder
   changes nothing, a finished task's hand-over (`policy::owner::hand_over`) gives what it owns to
   the chat that dispatched it, and the person's press of "Let this chat push it"
-  (`policy::owner::let_this_chat`) gives one to the chat named. The person's press of an answer
+  (`policy::owner::let_this_chat`) gives one to the chat named. **A branch folder's record ends**
+  (Q339.9) when its owner's `purlis worktree done` reaches the app
+  (`policy::owner::end_by_its_owner`, which ends only that chat's record) and when the folder is
+  removed (`policy::owner::end_of_a_removed_folder`, which ends nothing while something stands
+  there). The person's press of an answer
   (`Draft::add`, `Draft::remove`) refuses the kind. **An owner record that is missing or fails its
   seal is no record**: its resource's owner reads `none`, never `self`, and the plane is not put in
   the deny state for it. **But it blocks every new owner record** (Q339.8): while the manifest lists

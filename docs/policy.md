@@ -206,6 +206,27 @@ told the rule's name. It follows `guards.git`'s mode. It leaves `"none"` alone o
 folder whose record was lost is decided as before. Beneath it, one live chat at a time writes in a
 branch folder in every mode, `guards.git = "off"` included: that is how purlis works, not a rule.
 
+- **Which folders get an owner.** purlis records an owner only for a real branch folder: one that
+  stands on disk, was cut from its workspace's clone, and is in the workspace the asking chat
+  works in. A chat that names any other folder records nothing.
+- **When a folder stops being a chat's.** Its owner's `purlis worktree done` there ends the record,
+  and so does the folder's removal, however it is removed. No other chat can end it, and a removal
+  a chat asks for is refused by the rule where the folder is another chat's. A folder cut later
+  under the same name starts with no owner. Until the hand-over to a dispatcher and the window's
+  "Let this chat push it" arrive, these are the only two ways.
+- **A chat with no stable id** owns nothing, and every folder reads `"none"` to it, so the rule
+  never refuses it. Only the one-live-writer check holds it out of another chat's folder.
+- **What a brokered act tells the rule.** For `purlis worktree commit` and `update`, and a chat's
+  `purlis worktree remove`, purlis runs the git itself, with none of the repository's hooks. Their
+  context says `brokered` and `skip-hooks` are both `true`, `force` and `amend` are `false`. A
+  rule that refuses `skip-hooks` therefore refuses every brokered commit.
+- **A chat's own plain git is judged inside the Bash guard's wait.** The guard asks the app and
+  waits up to 900 ms for the answer. If the app is older than the question, or doesn't answer in
+  time, the git runs: the check guards against accidents and is not a wall. Under `strict`, a
+  chat's plain `git commit` in a folder another chat owns is refused only when the app answers in
+  time. `amend` and `skip-hooks` for plain git are read from the chat's own command line, by the
+  chat's own hook, so a rule can refuse on them but nothing is allowed because of them.
+
 `context.made_by` on a forge operation reads the same words, `"none"` until purlis keeps a record
 of what a chat made. A rule on `read` or `write` can't name `owner`: the sandbox is a fixed
 profile that can't tell whose a path is, so purlis refuses the rule when it loads the policy.

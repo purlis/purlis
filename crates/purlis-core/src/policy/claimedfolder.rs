@@ -17,7 +17,15 @@
 //!
 //! [`judge`] decides first, and the mutex is taken only once the policy lets the act go, so a
 //! refused chat never comes to hold a folder it may not write. The first chat whose act goes
-//! there is recorded as the folder's owner ([`Cleared::record`]), after it has taken the mutex.
+//! there is recorded as the folder's owner ([`Cleared::record`]), after it has taken the mutex,
+//! and only where the host has checked that the folder is a branch folder of the asking chat's
+//! own workspace, standing on disk (the review of #8010, F1): a chat's ask names the folder in its
+//! own words.
+//!
+//! **A record ends** (the person's ruling Q339.9, 2026-11-28) when its owner runs `purlis worktree
+//! done` there and when the folder is removed ([`owner::end_by_its_owner`],
+//! [`owner::end_of_a_removed_folder`]). No other chat can end it. It names which folder stood at
+//! its place ([`made_of`]), so a folder cut later under the same name starts with no owner.
 //!
 //! **Only the session host decides**: every caller holds the app's record of the asking chat
 //! ([`decide::ChatFacts`]). A process that is not the app has none and asks nothing here, and it
@@ -40,8 +48,10 @@ pub const RULE: &str = "guards-git-claimed-folder";
 pub struct Asking<'a> {
     /// The app's number for the chat.
     pub chat: u32,
-    /// Its stable id, which an owner record names it by. `None`: it owns nothing, and every folder
-    /// another chat owns reads `"none"` to it ([`owner::of_request`]).
+    /// Its stable id, which an owner record names it by. `None`: it owns nothing, and **every
+    /// folder another chat owns reads `"none"` to it** ([`owner::of_request`]), so the rule never
+    /// refuses it and only the one-writer mutex holds it out (the review of #8010, F8). Nor is it
+    /// ever recorded as an owner.
     pub id: Option<&'a str>,
     /// What the app records of it.
     pub facts: &'a ChatFacts,
@@ -60,16 +70,37 @@ pub fn action_of(act: Act) -> Option<&'static str> {
 }
 
 /// **The folder an owner record keys**: the plane's real root, then the folder's place by its
-/// names. Never the folder's own path resolved, so a link put where the folder was keys the same
-/// record and reads the same owner.
+/// names. Where a real folder (no link) stands there, its path as the file system spells it, so
+/// on a file system that ignores case `P1` and `p1` key the one record of the one folder. A link
+/// at the place is never followed: it keys the place by its names, and its own identity
+/// ([`made_of`]) is no folder's, so it names no owner.
 pub fn folder_of(root: &Path, at: &Located) -> PathBuf {
-    std::fs::canonicalize(root)
+    let place = std::fs::canonicalize(root)
         .unwrap_or_else(|_| root.to_path_buf())
         .join("workspaces")
         .join(&at.workspace)
         .join(crate::worktree::DIR_NAME)
         .join(&at.repo)
-        .join(&at.piece)
+        .join(&at.piece);
+    match place.symlink_metadata() {
+        Ok(found) if found.is_dir() => std::fs::canonicalize(&place).unwrap_or(place),
+        _ => place,
+    }
+}
+
+/// **Which folder stands at `folder`**, as an owner record names it: its device, inode and birth
+/// time, read of the place itself and never through a link there. `None` where nothing stands.
+/// A folder removed and cut again under its name is another folder, so a record of the first
+/// names no owner of the second (Q339.9), even where an inode number is used again.
+pub fn made_of(folder: &Path) -> Option<String> {
+    use std::os::unix::fs::MetadataExt as _;
+    let found = std::fs::symlink_metadata(folder).ok()?;
+    let born = found
+        .created()
+        .ok()
+        .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |since| since.as_nanos());
+    Some(format!("{}:{}:{born}", found.dev(), found.ino()))
 }
 
 /// The `Branch` the act is judged on: the folder's branch, named by its place
@@ -82,8 +113,9 @@ fn resource_of(at: &Located) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[must_use = "the first claim is recorded only once the mutex is taken"]
 pub struct Cleared {
-    /// The folder and the chat to record as its owner, where no record names one yet.
-    first: Option<(PathBuf, String)>,
+    /// The folder, which folder stands there, and the chat to record as its owner, where no
+    /// record names one yet.
+    first: Option<(PathBuf, String, String)>,
 }
 
 impl Cleared {
@@ -98,8 +130,15 @@ impl Cleared {
     /// made (this process cannot seal, the plane is in the deny state, or an owner record is lost)
     /// leaves the folder no one's, which is how it was decided: nothing is loosened by it.
     pub fn record(self, root: &Path) {
-        if let Some((folder, chat)) = self.first
-            && let Err(why) = owner::record_owner(root, &Owned::Folder(&folder), &chat)
+        if let Some((path, made, chat)) = self.first
+            && let Err(why) = owner::record_owner(
+                root,
+                &Owned::Folder {
+                    path: &path,
+                    made: &made,
+                },
+                &chat,
+            )
         {
             tracing::debug!("purlis: a branch folder's first claim was not recorded: {why}");
         }
@@ -123,9 +162,16 @@ pub fn judge(
         return Ok(Cleared::nothing());
     };
     let folder = folder_of(root, at);
+    // No folder there: nothing it holds is anyone's, and nothing is recorded.
+    let made = made_of(&folder);
     let sealed = Sealed {
         chat: asking.id.map(str::to_owned),
-        touched: Some(Touched::from(Owned::Folder(&folder))),
+        touched: made.as_deref().map(|made| {
+            Touched::from(Owned::Folder {
+                path: &folder,
+                made,
+            })
+        }),
         ..Sealed::of(root)
     };
     let owner = sealed.owner();
@@ -152,7 +198,8 @@ pub fn judge(
             let first = asking
                 .id
                 .filter(|id| !id.is_empty() && owner == Owner::Nobody)
-                .map(|id| (folder, id.to_owned()));
+                .zip(made)
+                .map(|(id, made)| (folder, made, id.to_owned()));
             Ok(Cleared { first })
         }
         Outcome::Ask | Outcome::Deny => Err(refusal(at, action, &decision)),
@@ -177,8 +224,9 @@ fn refusal(at: &Located, action: &str, decision: &Decision) -> String {
         "refuses it"
     };
     let what_to_do = if decision.ids().contains(&RULE) {
-        "Another chat claimed this folder first, so it is that chat's to write. Work in a branch \
-         folder of your own (`purlis worktree add`), or ask the person to hand this one over."
+        "Another chat claimed this folder first, so it is that chat's to write until that chat \
+         runs `purlis worktree done` there or the folder is removed. Work in a branch folder of \
+         your own (`purlis worktree add`)."
     } else {
         "Ask the person whether it should be done."
     };

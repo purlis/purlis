@@ -1113,6 +1113,8 @@ fn remove_as(
         .filter(git::Run::ok)
         .map(|run| PathBuf::from(run.line().trim()))
         .unwrap_or_else(|| clone.join(".git").join("worktrees").join(piece));
+    // Keyed while it is there, so the record ends however the folder's names were spelt.
+    let keyed = owner_key_of(plane, ws, repo, piece);
     let exists = path.symlink_metadata().is_ok();
     let removed = if exists {
         remove_present(&path, &clone, piece, force, delete_branch, branch_stays)
@@ -1121,8 +1123,30 @@ fn remove_as(
     };
     if removed.is_ok() {
         crate::pieceupdate::forget_notes(plane, &git_dir);
+        its_owner_records_end(plane, &keyed);
     }
     removed
+}
+
+/// **A removed branch folder's owner records end** (the person's ruling Q339.9, 2026-11-28), on
+/// every path that removes one: the place's records go once nothing stands there
+/// ([`crate::policy::owner::end_of_a_removed_folder`]). Best-effort: only the app can end a
+/// record, and one left by a process that cannot names the removed folder, never the next one cut
+/// under its name ([`crate::policy::claimedfolder::made_of`]).
+fn its_owner_records_end(plane: &Path, keyed: &Path) {
+    if let Err(why) = crate::policy::owner::end_of_a_removed_folder(plane, keyed) {
+        tracing::debug!("purlis: a removed branch folder's owner record was not ended: {why}");
+    }
+}
+
+/// The place an owner record of `piece`'s folder keys ([`crate::policy::claimedfolder::folder_of`]).
+fn owner_key_of(plane: &Path, ws: &str, repo: &str, piece: &str) -> PathBuf {
+    let at = Located {
+        workspace: ws.to_owned(),
+        repo: repo.to_owned(),
+        piece: piece.to_owned(),
+    };
+    crate::policy::claimedfolder::folder_of(plane, &at)
 }
 
 /// **Clears git's record of the folder of `piece`, where git itself finds that folder gone**,
@@ -1146,7 +1170,10 @@ pub fn clear_gone(plane: &Path, ws: &str, repo: &str, piece: &str) -> Result<boo
         });
     }
     match clear_stale(plane, ws, repo, piece, &clone) {
-        Ok(_) => Ok(true),
+        Ok(_) => {
+            its_owner_records_end(plane, &owner_key_of(plane, ws, repo, piece));
+            Ok(true)
+        }
         Err(Refusal::NoSuchPiece { .. }) => Ok(false),
         Err(other) => Err(other),
     }

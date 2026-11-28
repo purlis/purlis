@@ -690,11 +690,25 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
 }
 
 /// **What a claim ask tells the app of its line** (M75-25, #7034): whether any word of it asks for
-/// an amend or skips git's hooks, the act's `context.amend` and `context.skip-hooks`. Git takes an
-/// option by any prefix that names it alone, so `--am` is `--amend` and `--no-v` is `--no-verify`,
-/// and a cluster of short flags that holds `n` (`-n`, `-anm`) is read as `--no-verify`. Read of
-/// the whole line, so a word of another command on it counts too: it says more than the git does
-/// where it errs, never less. One pass over the line's words.
+/// an amend or skips git's hooks, the act's `context.amend` and `context.skip-hooks`.
+///
+/// - **Words as the shell cuts them** ([`shell_words`]): at blanks and at the shell's own
+///   separators (`;`, `&`, `|`, `(`, `)`, `<`, `>`), so `--amend;`, `--amend&&…`,
+///   `(git commit --amend)` and `--no-verify|cat` each hold the option, and with their quotes and
+///   backslashes taken out, so `--am"end"` and `--no-verif\y` are the options they spell.
+/// - **Git's own spellings**: an option by any prefix that names it alone (`--am` is `--amend`,
+///   `--no-v` is `--no-verify`), a cluster of short flags that holds `n` (`-n`, `-anm`) as
+///   `--no-verify`, and any word naming `core.hooksPath` (in any case: `-c core.hooksPath=…`,
+///   `--config-env`, a `GIT_CONFIG_*` setting) as skipping the hooks.
+/// - **A word the shell fills in** (`$…`, `` `…` ``, `$'…'`) could be any of these, so a line that
+///   holds one says both facts are true.
+///
+/// Read of the whole line, so a word of another command on it counts too: where it errs it says
+/// more than the git does, never less. One pass over the line.
+///
+/// **These two facts are the chat's own word**: the chat's hook process reads them, and a chat
+/// that sends its claim on the hook socket itself can say anything. A rule may refuse on them,
+/// and nothing is allowed because of them: no shipped rule permits on `amend` or `skip-hooks`.
 struct LineFacts {
     amend: bool,
     skip_hooks: bool,
@@ -709,15 +723,93 @@ impl LineFacts {
             amend: false,
             skip_hooks: false,
         };
-        for word in command.split_whitespace() {
-            let word = word.trim_matches(|c| c == '"' || c == '\'');
-            let word = word.split('=').next().unwrap_or(word);
-            read.amend |= names(word, "--amend", "--am".len());
-            read.skip_hooks |= names(word, "--no-verify", "--no-v".len())
-                || (word.starts_with('-') && !word.starts_with("--") && word.contains('n'));
+        for word in shell_words(command) {
+            if word.filled {
+                return Self {
+                    amend: true,
+                    skip_hooks: true,
+                };
+            }
+            let hooks_path = word.text.to_ascii_lowercase().contains("core.hookspath");
+            let text = word.text.split('=').next().unwrap_or_default();
+            read.amend |= names(text, "--amend", "--am".len());
+            read.skip_hooks |= hooks_path
+                || names(text, "--no-verify", "--no-v".len())
+                || (text.starts_with('-') && !text.starts_with("--") && text.contains('n'));
         }
         read
     }
+}
+
+/// One word of a shell line, as [`shell_words`] cuts it.
+struct ShellWord {
+    /// Its text, its quotes and backslashes taken out.
+    text: String,
+    /// The shell fills some of it in (`$`, a backquote), so its text is not what git is given.
+    filled: bool,
+}
+
+/// **A shell line's words**, cut at blanks and at the shell's separators outside quotes, each
+/// with its quotes and backslashes taken out. Not a shell parser: enough to never read less of an
+/// option than the shell hands git. One pass.
+fn shell_words(line: &str) -> Vec<ShellWord> {
+    #[derive(Clone, Copy, PartialEq)]
+    enum Quote {
+        None,
+        Single,
+        Double,
+    }
+    let mut words = Vec::new();
+    let mut word = ShellWord {
+        text: String::new(),
+        filled: false,
+    };
+    let mut started = false;
+    let mut quote = Quote::None;
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        match (quote, c) {
+            (Quote::Single, '\'') | (Quote::Double, '"') => quote = Quote::None,
+            (Quote::Single, c) => word.text.push(c),
+            (Quote::None | Quote::Double, '\\') => {
+                started = true;
+                word.text.extend(chars.next().filter(|next| *next != '\n'));
+            }
+            (Quote::None | Quote::Double, '$' | '`') => {
+                started = true;
+                word.filled = true;
+                word.text.push(c);
+            }
+            (Quote::Double, c) => word.text.push(c),
+            (Quote::None, '\'') => {
+                started = true;
+                quote = Quote::Single;
+            }
+            (Quote::None, '"') => {
+                started = true;
+                quote = Quote::Double;
+            }
+            (Quote::None, c) if c.is_whitespace() || ";&|()<>".contains(c) => {
+                if std::mem::take(&mut started) {
+                    words.push(std::mem::replace(
+                        &mut word,
+                        ShellWord {
+                            text: String::new(),
+                            filled: false,
+                        },
+                    ));
+                }
+            }
+            (Quote::None, c) => {
+                started = true;
+                word.text.push(c);
+            }
+        }
+    }
+    if started {
+        words.push(word);
+    }
+    words
 }
 
 /// The stack the guards run on: far more than any of them needs.
@@ -1072,5 +1164,65 @@ mod line_facts_tests {
         // A word that only starts like one is not it.
         assert_eq!(read("git commit --a -m x"), (false, false));
         assert_eq!(read("git commit --no- -m x"), (false, false));
+    }
+
+    /// The review of #8010, F2: a word is cut where the shell cuts it, at its separators as well
+    /// as at blanks, so an option glued to one is still read.
+    #[test]
+    fn an_option_glued_to_a_shell_separator_is_still_read() {
+        let read = |line: &str| {
+            let facts = LineFacts::of(line);
+            (facts.amend, facts.skip_hooks)
+        };
+        assert_eq!(read("git commit --amend; echo ok"), (true, false));
+        assert_eq!(read("git commit --amend&&git push"), (true, false));
+        assert_eq!(read("(git commit --amend)"), (true, false));
+        assert_eq!(read("git commit --no-verify|cat"), (false, true));
+        assert_eq!(read("git commit -m x --no-verify>out"), (false, true));
+    }
+
+    /// F2: quotes and backslashes inside a word are the shell's, and git is handed the option
+    /// they spell.
+    #[test]
+    fn quotes_and_backslashes_inside_a_word_spell_the_option_git_is_given() {
+        let read = |line: &str| {
+            let facts = LineFacts::of(line);
+            (facts.amend, facts.skip_hooks)
+        };
+        assert_eq!(read("git commit --am\"end\" -m x"), (true, false));
+        assert_eq!(read("git commit --am'end' -m x"), (true, false));
+        assert_eq!(read("git commit --no-verif\\y -m x"), (false, true));
+        assert_eq!(read("git commit \"--no-\"verify -m x"), (false, true));
+        // Quoted, a separator is part of the word, and the word is the message, not an option.
+        assert_eq!(read("git commit -m 'a; --amend'"), (false, false));
+    }
+
+    /// F2: a word the shell fills in could be any option, so the line says both facts.
+    #[test]
+    fn a_word_the_shell_fills_in_says_both_facts() {
+        let read = |line: &str| {
+            let facts = LineFacts::of(line);
+            (facts.amend, facts.skip_hooks)
+        };
+        assert_eq!(read("git commit $'--amend'"), (true, true));
+        assert_eq!(read("git commit $FLAGS -m x"), (true, true));
+        assert_eq!(read("git commit \"$(echo --amend)\""), (true, true));
+        assert_eq!(read("git commit `echo --no-verify`"), (true, true));
+        // In single quotes nothing is filled in.
+        assert_eq!(read("git commit -m 'costs $5'"), (false, false));
+    }
+
+    /// F2: `core.hooksPath` set for the call skips the repository's hooks, in any spelling.
+    #[test]
+    fn a_hooks_path_set_for_the_call_skips_the_hooks() {
+        let read = |line: &str| LineFacts::of(line).skip_hooks;
+        assert!(read("git -c core.hooksPath=/dev/null commit -m x"));
+        assert!(read("git -c CORE.HOOKSPATH=/dev/null commit -m x"));
+        assert!(read("git -ccore.hooksPath=/dev/null commit -m x"));
+        assert!(read("git --config-env=core.hooksPath=NOWHERE commit -m x"));
+        assert!(read(
+            "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/x git commit"
+        ));
+        assert!(!read("git -c core.editor=true commit -m x"));
     }
 }

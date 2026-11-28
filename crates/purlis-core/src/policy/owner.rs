@@ -44,6 +44,13 @@
 //! gives everything it owns to the chat that dispatched it ([`hand_over`]). The person's press of
 //! "Let this chat push it" gives one to the chat named ([`let_this_chat`]). Nothing else in purlis
 //! writes an owner record: [`answers::Draft::add`] and [`answers::Draft::remove`] refuse the kind.
+//!
+//! **A branch folder's record ends** (the person's ruling Q339.9, 2026-11-28, until the hand-over
+//! and the press land) when its owner runs `purlis worktree done` there ([`end_by_its_owner`],
+//! which ends only the asking chat's own record) and when the folder is removed
+//! ([`end_of_a_removed_folder`], which ends nothing while a folder stands there). No other chat
+//! can end it. A record also names which folder stood at its place ([`Owned::Folder`]), so one
+//! that outlives its folder, removed where no app could end it, never names a new folder's owner.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
@@ -99,17 +106,31 @@ pub enum Owned<'a> {
         repo: &'a str,
         branch: &'a str,
     },
-    /// A local branch folder, by its real path.
-    Folder(&'a Path),
+    /// A local branch folder, by its place (the plane's real root, then its names) and `made`,
+    /// which folder stood there when it was recorded ([`crate::policy::claimedfolder::made_of`]),
+    /// so a new folder cut under a removed one's name is no one's (Q339.9).
+    Folder { path: &'a Path, made: &'a str },
 }
 
 impl Owned<'_> {
     fn key(&self) -> String {
         match self {
             Self::Branch { host, repo, branch } => format!("branch {host}/{repo}#{branch}"),
-            Self::Folder(path) => format!("folder {}", path.display()),
+            Self::Folder { path, made } => format!("{}{made}", folder_prefix(path)),
         }
     }
+}
+
+/// What every key of a folder record at `path` starts with, whichever folder stood there.
+fn folder_prefix(path: &Path) -> String {
+    format!("folder {} made ", path.display())
+}
+
+/// Whether `key` is a folder record's key for the place `path`: its prefix, then an identity
+/// with no space, so a place whose own name holds " made " is never taken for another's.
+fn keys_the_place(key: &str, path: &Path) -> bool {
+    key.strip_prefix(&folder_prefix(path))
+        .is_some_and(|made| !made.is_empty() && !made.contains(' '))
 }
 
 /// **One owner record**, as its entry in the sealed store spells it.
@@ -400,6 +421,59 @@ pub fn let_this_chat(_press: &Press, root: &Path, owned: &Owned<'_>, chat: &str)
         );
     })?;
     Ok(())
+}
+
+/// **The owner's `purlis worktree done`** (Q339.9): every record of the branch folder at `path`
+/// (whichever folder stood there) that names `chat` ends, and no other chat's. Returns how many
+/// ended. Nothing is committed where none is `chat`'s, so a chat that does not own the folder
+/// changes nothing. Refused, as every commit is, where this process cannot seal and in the deny
+/// state.
+pub fn end_by_its_owner(root: &Path, path: &Path, chat: &str) -> io::Result<usize> {
+    if chat.is_empty() {
+        return Ok(0);
+    }
+    end_folder_records(root, path, Some(chat))
+}
+
+/// **A branch folder's removal** (Q339.9): every record of the place `path` ends, whoever it
+/// names, once nothing stands there. Returns how many ended. A place where something still
+/// stands, a folder or a link, ends nothing: only its removal ends it, never a word that it was
+/// removed.
+pub fn end_of_a_removed_folder(root: &Path, path: &Path) -> io::Result<usize> {
+    if path.symlink_metadata().is_ok() {
+        return Ok(0);
+    }
+    end_folder_records(root, path, None)
+}
+
+/// The owner records of the place `path` that `chat` is named in (every one, for `None`).
+fn folder_records(entries: &[answers::Entry], path: &Path, chat: Option<&str>) -> Vec<String> {
+    entries
+        .iter()
+        .filter(|entry| entry.kind == answers::OWNER)
+        .filter(|entry| match serde_json::from_str::<Fact>(&entry.text) {
+            Ok(Fact::Owns { of, chat: named }) => {
+                keys_the_place(&of, path) && chat.is_none_or(|chat| chat == named)
+            }
+            _ => false,
+        })
+        .map(|entry| entry.text.clone())
+        .collect()
+}
+
+fn end_folder_records(root: &Path, path: &Path, chat: Option<&str>) -> io::Result<usize> {
+    // Read first: a commit raises the store's counter, and most folders have no record.
+    if folder_records(&answers::standing(root).entries, path, chat).is_empty() {
+        return Ok(0);
+    }
+    let mut ended = 0;
+    answers::commit(root, |draft| {
+        for text in folder_records(draft.entries(), path, chat) {
+            draft.take_out_owner_record(&text);
+            ended += 1;
+        }
+    })?;
+    Ok(ended)
 }
 
 /// **The person's press of "Forget the lost owner records"** (#7748 round 3): the way out of a

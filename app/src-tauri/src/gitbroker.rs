@@ -118,7 +118,7 @@ fn asker(held: &Held, chat: u32) -> Result<Asker, Answer> {
         id: held.chats().id_of(chat),
         live: Some(live_chats(held)),
         policy: held.chats().handed_from(chat).and_then(|from| from.policy),
-        decided_as: Some(decided_as),
+        decided_as,
     })
 }
 
@@ -280,6 +280,8 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         } => {
             format!("hold {repo} {piece} for its own git's {act:?}")
         }
+        // Its own `purlis worktree done` (Q339.9): its record of the folder ends.
+        GitWork::WorktreeDone { repo, piece } => format!("worktree done {repo} {piece}"),
     };
     let isolation = signing_isolation(held);
     // One login (ADR 0128): the git the app runs for a chat goes through that chat's own route, so

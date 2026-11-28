@@ -2532,6 +2532,13 @@ pub enum GitWork {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         skip_hooks: bool,
     },
+    /// **`purlis worktree done` in the branch folder `<repo>/<piece>`** (the person's ruling
+    /// Q339.9, 2026-11-28): the chat's own owner record of the folder ends, and no other chat's
+    /// ([`crate::policy::owner::end_by_its_owner`]). Sent once the chat's `done` line is in the
+    /// piece log, which stays the chat's own to write and is never read for this. The app runs no
+    /// git and answers an empty `Said` with exit 0. A kind of its own, so an app that does not
+    /// know it answers nothing and ends nothing.
+    WorktreeDone { repo: String, piece: String },
 }
 
 /// The exit status a [`GitWork::WorktreeClaim`] is answered with where another live chat holds

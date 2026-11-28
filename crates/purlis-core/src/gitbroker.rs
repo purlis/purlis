@@ -106,11 +106,20 @@ pub struct Asker {
     /// looser (Q308a, Q308b; the review of #7113). `None` for a chat no dispatch started.
     pub policy: Option<String>,
     /// **What the session host records of the chat**, which the project policy decides its acts
-    /// in a branch folder by (M75-25, #7034; [`crate::policy::claimedfolder`]). The app always sets
-    /// it; `None` only in a process that is not the host, which has no policy to ask and no owner
-    /// record it could verify: the one-writer mutex still holds there.
-    pub decided_as: Option<crate::policy::decide::ChatFacts>,
+    /// in a branch folder by (M75-25, #7034; [`crate::policy::claimedfolder`]): the app's record
+    /// of a chat it has open, and the app refuses a chat it has none of before any ask is run.
+    pub decided_as: crate::policy::decide::ChatFacts,
 }
+
+/// **What a brokered act tells the policy of itself** (M75-25): the app runs the git
+/// (`brokered`), with none of the repository's hooks (`skip-hooks`), never forced and never
+/// amending. One value for the brokered commit, update and removal.
+pub const BROKERED: crate::policy::decide::GitFacts = crate::policy::decide::GitFacts {
+    force: false,
+    skip_hooks: true,
+    brokered: true,
+    amend: false,
+};
 
 /// **The git facts of a plain git's claim** (M75-25): what the guard read of its line, for the
 /// chat's own git, never the app's. `force` is false: a commit or an update rewrites no remote,
@@ -139,14 +148,11 @@ pub(crate) fn judged_folder(
     act: crate::piececlaim::Act,
     git: crate::policy::decide::GitFacts,
 ) -> Result<crate::policy::claimedfolder::Cleared, String> {
-    use crate::policy::claimedfolder::{self, Asking, Cleared};
-    let Some(facts) = &asker.decided_as else {
-        return Ok(Cleared::nothing());
-    };
+    use crate::policy::claimedfolder::{self, Asking};
     let asking = Asking {
         chat: asker.chat,
         id: asker.id.as_deref(),
-        facts,
+        facts: &asker.decided_as,
     };
     claimedfolder::judge(root, &asking, at, act, git)
 }
@@ -215,7 +221,23 @@ fn isolated_answer(root: &Path, asker: &Asker, ask: &GitAsk, now: jiff::Timestam
             repo: repo.clone(),
             piece: piece.clone(),
         };
-        return Answered::from(claim(root, asker, &folder, *act, ask_facts(&ask.work), now));
+        // The first claim is recorded only for a branch folder of the chat's own workspace,
+        // standing on disk (the review of #8010, F1): the names are the chat's own words. The
+        // mutex answers every claim as it did.
+        let recordable = bound(root, asker.cwd.as_deref(), &ask.workspace).is_ok()
+            && a_branch_folder_there(root, &folder);
+        let git = ask_facts(&ask.work);
+        return Answered::from(claim(root, asker, &folder, *act, git, recordable, now));
+    }
+    // The chat's own `purlis worktree done` (Q339.9): its record of the folder ends, and no
+    // other chat's. No git runs.
+    if let GitWork::WorktreeDone { repo, piece } = &ask.work {
+        let folder = crate::worktree::Located {
+            workspace: ask.workspace.clone(),
+            repo: repo.clone(),
+            piece: piece.clone(),
+        };
+        return Answered::from(done(root, asker, &folder));
     }
     // A workspace the ask makes is one no chat works in yet: the chat need only stand in the
     // project. Every other ask writes a workspace the chat already writes.
@@ -324,13 +346,7 @@ fn isolated_answer(root: &Path, asker: &Asker, ask: &GitAsk, now: jiff::Timestam
             };
             // The project policy first (M75-25), then the mutex, which holds in every mode. The
             // app's git runs none of the repository's hooks, and its update never forces.
-            let brokered = crate::policy::decide::GitFacts {
-                force: false,
-                skip_hooks: true,
-                brokered: true,
-                amend: false,
-            };
-            let cleared = match judged_folder(root, asker, &folder, act, brokered) {
+            let cleared = match judged_folder(root, asker, &folder, act, BROKERED) {
                 Ok(cleared) => cleared,
                 Err(why) => return no(why),
             };
@@ -393,6 +409,18 @@ fn isolated_answer(root: &Path, asker: &Asker, ask: &GitAsk, now: jiff::Timestam
                 repo: repo.clone(),
                 piece: piece.clone(),
             };
+            // A removal is the folder's `discard` (M75-25): the project policy decides it first,
+            // so a folder another chat owns is not removed for this one where
+            // `guards-git-claimed-folder` holds, and its owner record stands (Q339.9).
+            if let Err(why) = judged_folder(
+                root,
+                asker,
+                &folder,
+                crate::piececlaim::Act::Remove,
+                BROKERED,
+            ) {
+                return no(why);
+            }
             let held = git::isolation().unwrap_or_default();
             let mut not_run = None;
             let removed = crate::piececlaim::removing(
@@ -486,8 +514,10 @@ fn isolated_answer(root: &Path, asker: &Asker, ask: &GitAsk, now: jiff::Timestam
                 &mut say,
             )
         }
-        // Answered before anything above was asked ([`claim`]), and never reaches here.
-        GitWork::WorktreeClaim { .. } => unreachable!("a claim is answered before any check"),
+        // Answered before anything above was asked ([`claim`], [`done`]), and never reaches here.
+        GitWork::WorktreeClaim { .. } | GitWork::WorktreeDone { .. } => {
+            unreachable!("a claim or a done is answered before any check")
+        }
         GitWork::RootUpdate {} => {
             // Placed at the root above, so its own folder is the root.
             let chat_dir = asker.cwd.as_deref().unwrap_or(root);
@@ -1115,7 +1145,7 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
         // A workspace that is not there yet holds no clone; one that is there is refused.
         GitWork::Create { .. } => Vec::new(),
         // Runs no git.
-        GitWork::WorktreeClaim { .. } => Vec::new(),
+        GitWork::WorktreeClaim { .. } | GitWork::WorktreeDone { .. } => Vec::new(),
     }
 }
 
@@ -1134,6 +1164,7 @@ fn claim(
     at: &crate::worktree::Located,
     act: crate::hookwire::ClaimAct,
     git: crate::policy::decide::GitFacts,
+    recordable: bool,
     now: jiff::Timestamp,
 ) -> Answer {
     let may = Answer::Said {
@@ -1171,7 +1202,9 @@ fn claim(
     let live = asker.live.as_deref();
     match crate::piececlaim::take_telling(root, at, &who(asker), live, act.act(), now) {
         Ok(()) => {
-            cleared.record(root);
+            if recordable {
+                cleared.record(root);
+            }
             may
         }
         // The one answer the guard refuses on: another live chat holds the folder.
@@ -1180,6 +1213,62 @@ fn claim(
             code: crate::hookwire::CLAIM_HELD,
         },
         Err(crate::piececlaim::Refusal::Otherwise(why)) => Answer::No { why },
+    }
+}
+
+/// **Whether `at` is a branch folder standing on disk**, cut from its workspace's clone (the
+/// review of #8010, F1): a real directory at the place its names give, never a link, placed back
+/// at those same names ([`crate::worktree::locate`]), whose `.git` names the clone's own git
+/// folder. Read of files alone, with no git run, since a claim is asked inside the guard's wait.
+fn a_branch_folder_there(root: &Path, at: &crate::worktree::Located) -> bool {
+    let Ok(folder) = crate::worktree::path_for(root, &at.workspace, &at.repo, &at.piece) else {
+        return false;
+    };
+    let real_dir = folder
+        .symlink_metadata()
+        .is_ok_and(|meta| meta.file_type().is_dir());
+    if !real_dir || crate::worktree::locate(root, &folder).as_ref() != Some(at) {
+        return false;
+    }
+    let Ok(clone) = crate::repofolder::folder(root, &at.workspace, &at.repo) else {
+        return false;
+    };
+    let dot_git = clone.join(".git");
+    crate::worktree::is_own_git_dir(&dot_git)
+        && std::fs::canonicalize(&dot_git)
+            .is_ok_and(|own| crate::worktree::clone_git_dir_of(&folder) == Some(own))
+}
+
+/// **The chat's own `purlis worktree done` in the branch folder `at`** (Q339.9, the person's
+/// ruling of 2026-11-28): the folder's owner record ends where it names this chat, and no other
+/// chat's record is touched, so a chat that does not own the folder ends nothing. The piece log's
+/// `done` line is the chat's own to write, and is never read for this. An empty `Said` with exit
+/// 0 where nothing was the chat's or its record ended; a `No` where the record could not be ended.
+fn done(root: &Path, asker: &Asker, at: &crate::worktree::Located) -> Answer {
+    let may = Answer::Said {
+        lines: Vec::new(),
+        code: 0,
+    };
+    let Some(id) = asker.id.as_deref().filter(|id| !id.is_empty()) else {
+        return may;
+    };
+    if !crate::contain::workspace_name_ok(&at.workspace)
+        || !crate::contain::repo_name_ok(&at.repo)
+        || !crate::worktree::name::piece_name_ok(&at.piece)
+    {
+        return may;
+    }
+    let path = crate::policy::claimedfolder::folder_of(root, at);
+    match crate::policy::owner::end_by_its_owner(root, &path, id) {
+        Ok(_) => may,
+        Err(why) => Answer::No {
+            why: format!(
+                "purlis could not end this chat's claim on {}'s branch folder '{}' ({why}), so \
+                 it is still this chat's",
+                crate::shown::readable(&at.repo, 60),
+                crate::shown::readable(&at.piece, 60)
+            ),
+        },
     }
 }
 
