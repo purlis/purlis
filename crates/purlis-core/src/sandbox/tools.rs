@@ -2859,6 +2859,18 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "udpsvd",
     "s6-tcpserver4d",
     "s6-tcpserver6d",
+    // The terminals and multiplexers #7964 names, refused whole on what each is for, as
+    // `screen` and `tmux` are: each runs the command it is handed in the window or the pane
+    // it opens (`xterm -e`, `kitty`, `alacritty -e`, `wezterm start`, `gnome-terminal --`,
+    // `konsole -e`, `zellij run`), and `byobu` is `tmux`'s or `screen`'s front-end.
+    "xterm",
+    "kitty",
+    "alacritty",
+    "wezterm",
+    "gnome-terminal",
+    "konsole",
+    "zellij",
+    "byobu",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

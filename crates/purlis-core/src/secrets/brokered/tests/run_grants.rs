@@ -4049,3 +4049,23 @@ fn execlines_other_programs_and_the_chain_loaders_of_7964_are_offered_no_run_gra
         refused_as_running_others(name);
     }
 }
+
+/// The terminals and multiplexers #7964 names, each of which runs the command it is handed in
+/// the window or the pane it opens: `xterm -e`, `kitty`, `alacritty -e`, `wezterm start`,
+/// `gnome-terminal --`, `konsole -e`, `zellij run` and `byobu`, which is `tmux`'s or `screen`'s
+/// front-end.
+#[test]
+fn the_terminals_and_multiplexers_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "xterm",
+        "kitty",
+        "alacritty",
+        "wezterm",
+        "gnome-terminal",
+        "konsole",
+        "zellij",
+        "byobu",
+    ] {
+        refused_as_running_others(name);
+    }
+}
