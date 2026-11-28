@@ -37,6 +37,7 @@ fn asker() -> Asker<'static> {
         depth: 0,
         via: "hook",
         start: None,
+        git: None,
     }
 }
 

@@ -287,7 +287,27 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, CliError> {
             })
         }),
         WorktreeCommand::Done => {
-            piececmd::declare(&root, &here.cwd, Declaration::Done, &who, now, &mut say)
+            let code = piececmd::declare(&root, &here.cwd, Declaration::Done, &who, now, &mut say);
+            // The folder's owner record is the app's to end (Q339.9): told once the `done` line
+            // is written, in a chat the app started. No app, or one that does not know the ask,
+            // ends nothing, and the record keeps the folder this chat's.
+            if code == 0
+                && crate::session::chat_number().is_some()
+                && let Some(at) = purlis_core::worktree::locate(&root, &here.cwd)
+            {
+                let work = purlis_core::hookwire::GitWork::WorktreeDone {
+                    repo: at.repo.clone(),
+                    piece: at.piece.clone(),
+                };
+                if let crate::gitask::Forwarded::Refused(why) = crate::gitask::forwarded(
+                    &at.workspace,
+                    work,
+                    crate::gitask::A_PIECE_UPDATE_TAKES_AT_MOST,
+                ) {
+                    say(purlis_core::repocmd::Say::Warn(why.into()));
+                }
+            }
+            code
         }
         WorktreeCommand::Abandon { reason } => piececmd::declare(
             &root,

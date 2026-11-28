@@ -2517,11 +2517,28 @@ pub enum GitWork {
     /// no answer does. Asked with [`GitAsk::alive`] off: the guard's wait is bounded, and a
     /// liveness line would only spend it. A kind of its own, so an app that does not know it
     /// answers nothing.
+    ///
+    /// **The project policy decides it first** (M75-25, #7034): where
+    /// `guards-git-claimed-folder` or another rule refuses the act, it is answered as a held
+    /// folder is, with [`CLAIM_HELD`] and the refusal naming each rule, so a guard of any version
+    /// refuses it. `amend` and `skip_hooks` are what the guard read of the line (`--amend`,
+    /// `--no-verify`): the act's `context.amend` and `context.skip-hooks`.
     WorktreeClaim {
         repo: String,
         piece: String,
         act: ClaimAct,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        amend: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        skip_hooks: bool,
     },
+    /// **`purlis worktree done` in the branch folder `<repo>/<piece>`** (the person's ruling
+    /// Q339.9, 2026-11-28): the chat's own owner record of the folder ends, and no other chat's
+    /// ([`crate::policy::owner::end_by_its_owner`]). Sent once the chat's `done` line is in the
+    /// piece log, which stays the chat's own to write and is never read for this. The app runs no
+    /// git and answers an empty `Said` with exit 0. A kind of its own, so an app that does not
+    /// know it answers nothing and ends nothing.
+    WorktreeDone { repo: String, piece: String },
 }
 
 /// The exit status a [`GitWork::WorktreeClaim`] is answered with where another live chat holds

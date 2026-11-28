@@ -101,12 +101,20 @@ fn the_owner_values_are_self_task_asker_other_or_none() {
         (STRANGER, "stranger"),
     ] {
         let path = root.join(folder);
-        assert!(record_owner(&root, &Owned::Folder(&path), chat).expect("recorded"));
+        let folder = Owned::Folder {
+            path: &path,
+            made: "1:2:3",
+        };
+        assert!(record_owner(&root, &folder, chat).expect("recorded"));
     }
     let records = Records::read(&root);
     let of = |actor: &str, folder: &str| {
         let path = root.join(folder);
-        owner(actor, records.holder(&Owned::Folder(&path)), &records)
+        let folder = Owned::Folder {
+            path: &path,
+            made: "1:2:3",
+        };
+        owner(actor, records.holder(&folder), &records)
     };
 
     // The actor's own line, up and down, at any depth.
@@ -182,6 +190,7 @@ fn the_host_computes_context_owner_from_what_the_act_touches() {
         depth: 1,
         via: "hook",
         start: None,
+        git: None,
     };
     for action in [
         "read",
@@ -214,8 +223,12 @@ fn a_record_a_chat_edited_never_makes_it_an_owner() {
     let root = plane(&m);
     assert!(record_owner(&root, &branch("work"), STRANGER).expect("recorded"));
     // The branch folder the piece log below claims: `workspaces/web/.worktrees/app/piece`.
-    let folder = root.join("workspaces/web/.worktrees/app/piece");
-    assert!(record_owner(&root, &Owned::Folder(&folder), STRANGER).expect("recorded"));
+    let path = root.join("workspaces/web/.worktrees/app/piece");
+    let folder = Owned::Folder {
+        path: &path,
+        made: "1:2:3",
+    };
+    assert!(record_owner(&root, &folder, STRANGER).expect("recorded"));
     assert_eq!(owner_of(&root, TASK, &branch("work")), Owner::Other);
 
     // The files a chat can reach, and that once said who owns a branch or a folder, name it:
@@ -262,7 +275,7 @@ fn a_record_a_chat_edited_never_makes_it_an_owner() {
         "the piece log names TASK as the folder's claimant: {claims:?}"
     );
     assert_eq!(owner_of(&root, TASK, &branch("work")), Owner::Other);
-    assert_eq!(owner_of(&root, TASK, &Owned::Folder(&folder)), Owner::Other);
+    assert_eq!(owner_of(&root, TASK, &folder), Owner::Other);
 
     // An unsandboxed chat edits the sealed records to name itself: they fail their seal and are
     // no record, so the owner is "none", never "self".
@@ -275,10 +288,7 @@ fn a_record_a_chat_edited_never_makes_it_an_owner() {
     let standing = answers::standing(&root);
     assert!(!standing.is_deny(), "{:?}", standing.state);
     assert_eq!(owner_of(&root, TASK, &branch("work")), Owner::Nobody);
-    assert_eq!(
-        owner_of(&root, TASK, &Owned::Folder(&folder)),
-        Owner::Nobody
-    );
+    assert_eq!(owner_of(&root, TASK, &folder), Owner::Nobody);
 
     // A process that is not the app cannot seal a record, and verifies none.
     seal::set_for_this_test(None);

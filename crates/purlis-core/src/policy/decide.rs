@@ -706,6 +706,24 @@ pub struct Asker<'a> {
     /// What `start` reads of the start that is judged, where this is one (M75-37): the other
     /// actions read none of it.
     pub start: Option<StartFacts<'a>>,
+    /// What a git act's context holds besides the common fields (M75-25, #7034), where the
+    /// enforcement point that asks is a git one: the other actions read none of it, and a git
+    /// action asked without it does not fit the schema, so it is denied, never guessed.
+    pub git: Option<GitFacts>,
+}
+
+/// **What a git act's context holds besides the common fields** (M75-25, #7034; spec §3.2): each
+/// the host's reading of the act it brokers or is asked to claim a branch folder for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GitFacts {
+    /// `context.force`: the act rewrites what the remote holds.
+    pub force: bool,
+    /// `context.skip-hooks`: the act skips git's hooks (`--no-verify`).
+    pub skip_hooks: bool,
+    /// `context.brokered`: the app runs the git, not the chat.
+    pub brokered: bool,
+    /// `context.amend`: the commit replaces the last one.
+    pub amend: bool,
 }
 
 /// **What a start's context holds besides the common fields** (spec §3.2, §14.8): the profile it
@@ -750,6 +768,16 @@ impl Asker<'_> {
                 // that is a deny (§6.3, M75-07b). Never `machine.json`'s.
                 "machine" => match machine {
                     Some(id) => id.into(),
+                    None => continue,
+                },
+                "force" | "skip-hooks" | "brokered" | "amend" => match &self.git {
+                    Some(git) => match field.as_str() {
+                        "force" => git.force,
+                        "skip-hooks" => git.skip_hooks,
+                        "brokered" => git.brokered,
+                        _ => git.amend,
+                    }
+                    .into(),
                     None => continue,
                 },
                 "owner" => owner.word().into(),
@@ -1117,6 +1145,34 @@ pub fn for_chat(
     ))
 }
 
+/// [`for_chat`], for a git act the host brokers or claims a branch folder for (M75-25, #7034):
+/// its context carries `git`, the host's reading of the act.
+#[allow(clippy::too_many_arguments)]
+pub fn for_chats_git(
+    root: &std::path::Path,
+    chat: u32,
+    facts: &ChatFacts,
+    git: GitFacts,
+    floor: &crate::enforcement::Resolved,
+    sealed: &Sealed,
+    action: &str,
+    resource: (&str, &str),
+) -> Decision {
+    let asker = Asker {
+        git: Some(git),
+        ..asker_of(chat, facts)
+    };
+    judged_in_plane(
+        root,
+        &asker,
+        action,
+        resource,
+        sealed,
+        Some(floor),
+        |decision, request| settled_by_the_floor(decision, request, floor),
+    )
+}
+
 /// **The timed grants the person gives chat `chat` at its ask** (M75-21): the decision the host
 /// makes for `action` on `resource`, before any answer is applied, handed to [`grants::give_timed`]
 /// so what is granted is what the host decides now, never what a window says the ask was. `None`
@@ -1237,6 +1293,7 @@ pub(super) fn asker_of(chat: u32, facts: &ChatFacts) -> Asker<'_> {
         depth: 0,
         via: "hook",
         start: None,
+        git: None,
     }
 }
 
@@ -1320,6 +1377,7 @@ pub fn replays_host(
         depth: 0,
         via: "hook",
         start: None,
+        git: None,
     };
     crate::hookwire::Answer::Decided(Box::new(in_plane(
         root,

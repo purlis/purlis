@@ -16,6 +16,14 @@ fn asker(cwd: Option<&Path>) -> Asker {
         config: None,
         id: None,
         live: None,
+        decided_as: crate::policy::decide::ChatFacts {
+            workspace: None,
+            persona: None,
+            sandboxed: false,
+            level: None,
+            attended: true,
+            harness_mode: None,
+        },
     }
 }
 
@@ -122,6 +130,8 @@ fn plain_git_s_claim_is_taken_by_the_first_live_chat_and_refused_to_a_second() {
             repo: "widget".to_owned(),
             piece: "p1".to_owned(),
             act,
+            amend: false,
+            skip_hooks: false,
         },
     };
     let asked = |asker: &Asker, act| {
@@ -174,6 +184,8 @@ fn plain_git_s_claim_is_taken_by_the_first_live_chat_and_refused_to_a_second() {
             repo: "widget".to_owned(),
             piece: "p1".to_owned(),
             act: ClaimAct::Commit,
+            amend: false,
+            skip_hooks: false,
         },
     };
     let odd = answer(
@@ -223,6 +235,8 @@ fn a_holder_not_back_since_a_restart_is_answered_no_and_not_held() {
                     repo: "widget".to_owned(),
                     piece: "p1".to_owned(),
                     act: ClaimAct::Push,
+                    amend: false,
+                    skip_hooks: false,
                 },
             },
             &git::Isolated::default(),

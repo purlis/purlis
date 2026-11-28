@@ -361,6 +361,9 @@ fn committed_by_itself(
         repo: placed.at.repo.clone(),
         piece: placed.at.piece.clone(),
         act: hookwire::ClaimAct::Commit,
+        // Its own git's commit: a message, never an amend, and the repository's hooks run.
+        amend: false,
+        skip_hooks: false,
     };
     if let Forwarded::Said { code, lines } =
         forwarded(&placed.at.workspace, claim, A_CLAIM_TAKES_AT_MOST)
