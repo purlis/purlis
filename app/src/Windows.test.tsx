@@ -676,9 +676,10 @@ describe("a view's unsaved work across windows (#4028)", () => {
 
     fire("quit-asked", null);
     await answers(1, false);
-    // Twice: this mock hands the quit to Strict Mode's let-go listener too, which is a second
-    // quit asked while the first is up, and not taken. Then the answer's.
-    await waitFor(() => expect(sent("quit_cancelled")).toHaveLength(2));
+    // Once, the answer's. Before the window's one listener per event (#7909), this mock handed
+    // the quit to Strict Mode's let-go listener too, a second quit not taken; that part is
+    // stopped now, and the one listener no longer calls it.
+    await waitFor(() => expect(sent("quit_cancelled")).toHaveLength(1));
     expect(sent("quit")).toEqual([]);
 
     fire("quit-asked", null);
@@ -696,7 +697,7 @@ describe("a view's unsaved work across windows (#4028)", () => {
 
     fire("quit-asked", null);
 
-    await waitFor(() => expect(sent("quit_cancelled")).toHaveLength(2), { timeout: 5000 });
+    await waitFor(() => expect(sent("quit_cancelled")).toHaveLength(1), { timeout: 5000 });
     expect(sent("quit")).toEqual([]);
   });
 
