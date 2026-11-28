@@ -4182,3 +4182,35 @@ fn the_tracers_of_7964_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The build and version managers, builders and compiler wrappers #7964 and its comment name,
+/// each of which runs a project's build files, the command it wraps or what its triggers name:
+/// `rebar3`, SDKMAN's `sdk`, `nvm exec`, `bundler` (macOS's, Bundler 1.17.2, evaluates the
+/// Gemfile as Ruby and `exec`s the command `bundler exec` names), `esy`, `ocamlfind`, the
+/// reloaders `air` and `modd`, `watchman` (its triggers); CMake's `ccmake` and `cpack`, Buck
+/// 1's `buck`, `muon` and `samu`; and icecream's `icerun` and `iceccd` and `distccd`, which run
+/// the compiler commands they are handed.
+#[test]
+fn the_build_and_version_managers_and_compiler_wrappers_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "rebar3",
+        "sdk",
+        "nvm",
+        "bundler",
+        "esy",
+        "ocamlfind",
+        "air",
+        "modd",
+        "watchman",
+        "ccmake",
+        "cpack",
+        "buck",
+        "muon",
+        "samu",
+        "icerun",
+        "iceccd",
+        "distccd",
+    ] {
+        refused_as_running_others(name);
+    }
+}
