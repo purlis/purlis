@@ -38,6 +38,8 @@ const meta = {
       nevers_new_key: false,
       nevers_to_keep: null,
       nevers_unshowable: false,
+      nevers_unvouched: false,
+      nevers_to_seal: null,
       digest: "d1",
       template: "watch",
       template_default: true,

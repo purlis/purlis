@@ -255,6 +255,14 @@ impl InForce {
     /// ([`crate::dispatchwithin::noticed`]), a record of nevers an earlier build kept moved to
     /// its own file, and a tightening of `[policy]` kept as accepted.
     pub fn read(root: &Path, chat: Vec<ChatPair>) -> Self {
+        // **The nevers first, then every grant** (#7952's round 2): Seal these nevers clears the
+        // grants before the nevers read, so a read that finds them read finds the grants cleared,
+        // never a grant of before beside nevers sealed since.
+        let (never, never_unread) = match crate::dispatchnever::read(root) {
+            crate::dispatchnever::Nevers::Read(pairs) => (pairs, false),
+            crate::dispatchnever::Nevers::Unread => (Vec::new(), true),
+        };
+        let never_unaccepted = never_unread && crate::dispatchnever::unread_by_the_policy(root);
         let settled = crate::dispatcharrival::for_read(root).read;
         let seen = crate::sandbox::local::dispatch_seen(root)
             .filter(|_| settled)
@@ -262,11 +270,6 @@ impl InForce {
         // With `[policy]`, from the committed file at `HEAD` and never fewer than this person
         // accepted; unreadable, every dispatch across personas (the review of #7113).
         let (denies, denied_unaccepted) = crate::enforcement::denies_in_force_and_unaccepted(root);
-        let (never, never_unread) = match crate::dispatchnever::read(root) {
-            crate::dispatchnever::Nevers::Read(pairs) => (pairs, false),
-            crate::dispatchnever::Nevers::Unread => (Vec::new(), true),
-        };
-        let never_unaccepted = never_unread && crate::dispatchnever::unread_by_the_policy(root);
         Self {
             chat,
             you: yours(root),

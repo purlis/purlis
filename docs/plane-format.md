@@ -4881,7 +4881,9 @@ write into this folder cannot make its own text arrive as the person's.
   (`sandbox::local::broken_by_a_new_key`, `PolicyState.new_key`,
   `PolicyState.nevers_new_key`), and only then are the nevers' pairs offered to keep. A plane
   leaves it for its policy when it is accepted again, for its nevers when the person keeps the
-  pairs shown, and the item goes with its last plane. Where both accounts hold a list, only one
+  pairs shown, or, where purlis does not vouch for its entry and no account can be named to
+  delete, when they press Seal these nevers, which also clears the project's dispatch grants on
+  this machine (#7852), and the item goes with its last plane. Where both accounts hold a list, only one
   the other names every entry of is deleted to make room, so a write cut short loses none.
   **The window never asks for a list whose seal holds to be deleted** (#7734's round 5): that is
   purlis's own, and deleting it would make the planes it keeps read as never accepted, or their

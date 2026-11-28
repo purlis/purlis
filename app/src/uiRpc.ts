@@ -415,6 +415,7 @@ export const commands = {
 	acceptProjectPolicy: __WINDOW_ONLY_RESULT,
 	acceptProjectPolicyWithNewKey: __WINDOW_ONLY_RESULT,
 	keepProjectNevers: __WINDOW_ONLY_RESULT,
+	sealUnvouchedProjectNevers: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What the project's `[policy]` let through and logged** (Q308a: the "would have blocked"
 	 *  count, which opens the log): every chat's lines, newest first. A read, off the window's
@@ -11505,9 +11506,17 @@ export type PolicyState = {
 	nevers_to_keep: NeversToKeep | null,
 	/**
 	 *  Whether that list holds a name purlis cannot show faithfully (#7734's round 4): no pair
-	 *  is offered to keep, and the window says so.
+	 *  is offered to keep or to seal, and the window says so.
 	 */
 	nevers_unshowable: boolean,
+	/**
+	 *  Whether this project's never-dispatch list reads as unread because a list of a replaced
+	 *  seal key that purlis cannot vouch for names it, and no keychain item can be named to
+	 *  delete (#7852): the window offers Seal these nevers ([`seal_unvouched_project_nevers`]).
+	 */
+	nevers_unvouched: boolean,
+	/**  The pairs Seal these nevers seals, where `nevers_unvouched` and the list's file reads. */
+	nevers_to_seal: NeversToKeep | null,
 	/**
 	 *  The digest of the committed text this was read from: what Accept names, so a press on a
 	 *  file that changed since it was shown accepts nothing.

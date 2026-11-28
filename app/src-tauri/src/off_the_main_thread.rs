@@ -524,6 +524,7 @@ pub(crate) const ANSWER_CLASSES: &[(Class, &[&str])] = &[
             "runner_write",
             "sandbox_block_choices",
             "sandbox_grants",
+            "seal_unvouched_project_nevers",
             "secret_ask_entries",
             "secret_need_personas",
             "see_inbox",
