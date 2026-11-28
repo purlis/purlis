@@ -3053,6 +3053,23 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "virsh",
     "qemu",
     "wsl",
+    // The compilers and shells #7988 names that run code, siblings of the runtimes #7964 refuses,
+    // refused on this list and not on REFUSED_NAMES, as those are (ADR 0112's amendment for #7964):
+    // `runhaskell`, `runghc`'s twin, runs a Haskell file and `ghci` (`-e`) code; `kotlinc -script`
+    // runs a Kotlin script; `scalac`'s macros and compiler plugins run as it compiles; `groovysh`
+    // and Elixir's `iex` are shells; `clj` is `clojure`'s REPL front-end; `erlc` runs a module's
+    // parse transforms; and `jbang` runs the Java file it is handed. QuickJS's `qjsc`, `qjs`'s
+    // compiler, is kept with them on the conservative side.
+    "runhaskell",
+    "ghci",
+    "kotlinc",
+    "scalac",
+    "groovysh",
+    "clj",
+    "iex",
+    "erlc",
+    "qjsc",
+    "jbang",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

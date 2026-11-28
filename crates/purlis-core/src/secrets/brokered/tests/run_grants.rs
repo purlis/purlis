@@ -4266,3 +4266,25 @@ fn the_vm_and_container_runners_of_7988_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The compilers and shells #7988 names, siblings of #7964's runtimes, each of which runs code it
+/// is handed or a project's code as it compiles: `runhaskell`, `ghci`, `kotlinc` (`-script`),
+/// `scalac` (macros), `groovysh`, `clj`, Elixir's `iex`, `erlc` (parse transforms) and `jbang`; and
+/// QuickJS's `qjsc`, kept with them on the conservative side.
+#[test]
+fn the_compilers_and_shells_of_7988_that_run_code_are_offered_no_run_grant() {
+    for name in [
+        "runhaskell",
+        "ghci",
+        "kotlinc",
+        "scalac",
+        "groovysh",
+        "clj",
+        "iex",
+        "erlc",
+        "qjsc",
+        "jbang",
+    ] {
+        refused_as_running_others(name);
+    }
+}
