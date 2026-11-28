@@ -130,7 +130,11 @@ export const ForeignKey: Story = {
   args: { entry: { ...WAITING, reasons: ["broken"], needs_new_key: true } },
   play: async () => {
     const { page } = await opened("Work in strict mode");
-    await expect(page.getByRole("button", { name: "Make a new key and accept" })).toBeVisible();
+    // The dialog fades in from nothing as it opens (`dialog.css`), and an element under an
+    // ancestor at opacity 0 is not visible yet: asked once, the answer raced the fade.
+    await waitFor(() =>
+      expect(page.getByRole("button", { name: "Make a new key and accept" })).toBeVisible(),
+    );
     await pictureNow();
   },
 };
