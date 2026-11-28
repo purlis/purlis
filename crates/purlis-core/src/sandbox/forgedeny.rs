@@ -362,8 +362,13 @@ impl ForgeDenial {
         let answers: Vec<HashSet<IpAddr>> = if let [only] = due.as_slice() {
             vec![ask(only)]
         } else {
+            // What each lookup starts counts where this thread's does (#7892).
+            let counting = crate::forklock::counting::carried();
             std::thread::scope(|scope| {
-                let asking: Vec<_> = due.iter().map(|name| scope.spawn(|| ask(name))).collect();
+                let asking: Vec<_> = due
+                    .iter()
+                    .map(|name| scope.spawn(|| counting.within(|| ask(name))))
+                    .collect();
                 asking
                     .into_iter()
                     .map(|one| one.join().unwrap_or_default())

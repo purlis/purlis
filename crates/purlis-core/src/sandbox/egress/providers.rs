@@ -116,16 +116,20 @@ impl ProviderAddresses {
     /// Every address the names resolve to now, [`LOOKUPS_AT_ONCE`] lookups at a time.
     fn look_up(&self) -> Vec<SocketAddr> {
         let per = self.names.len().div_ceil(LOOKUPS_AT_ONCE).max(1);
+        // What each lookup starts counts where this thread's does (#7892).
+        let counting = &crate::forklock::counting::carried();
         std::thread::scope(|scope| {
             let running: Vec<_> = self
                 .names
                 .chunks(per)
                 .map(|names| {
                     scope.spawn(move || {
-                        names
-                            .iter()
-                            .flat_map(|name| (self.resolve)(name, PORT))
-                            .collect::<Vec<_>>()
+                        counting.within(|| {
+                            names
+                                .iter()
+                                .flat_map(|name| (self.resolve)(name, PORT))
+                                .collect::<Vec<_>>()
+                        })
                     })
                 })
                 .collect();

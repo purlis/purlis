@@ -469,18 +469,22 @@ fn each_at_most<T: Sync, R: Send>(
     read: impl Fn(&T) -> R + Sync,
 ) -> Vec<R> {
     let next = std::sync::atomic::AtomicUsize::new(0);
+    // What each thread starts counts where this one does (#7892).
+    let counting = crate::forklock::counting::carried();
     let mut out: Vec<(usize, R)> = std::thread::scope(|scope| {
         let workers: Vec<_> = (0..at_once.min(items.len()))
             .map(|_| {
                 scope.spawn(|| {
-                    let mut mine = Vec::new();
-                    loop {
-                        let at = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        let Some(item) = items.get(at) else {
-                            return mine;
-                        };
-                        mine.push((at, read(item)));
-                    }
+                    counting.within(|| {
+                        let mut mine = Vec::new();
+                        loop {
+                            let at = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            let Some(item) = items.get(at) else {
+                                return mine;
+                            };
+                            mine.push((at, read(item)));
+                        }
+                    })
                 })
             })
             .collect();
