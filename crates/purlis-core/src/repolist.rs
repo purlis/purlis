@@ -191,18 +191,22 @@ fn probe(backend: &dyn ForgeBackend, caller: &Caller, repos: &[RepoRecord]) -> V
     let mut found = vec![Manifest::Unknown; repos.len()];
     let next = AtomicUsize::new(0);
     let background = caller.clone().background();
+    // What each probe starts counts where this thread's does (#7892).
+    let counting = crate::forklock::counting::carried();
     let answers: Vec<(usize, Manifest)> = std::thread::scope(|scope| {
         let workers: Vec<_> = (0..PROBES_AT_ONCE.min(share))
             .map(|_| {
                 scope.spawn(|| {
-                    let mut mine = Vec::new();
-                    loop {
-                        let at = next.fetch_add(1, Ordering::SeqCst);
-                        if at >= share {
-                            break mine;
+                    counting.within(|| {
+                        let mut mine = Vec::new();
+                        loop {
+                            let at = next.fetch_add(1, Ordering::SeqCst);
+                            if at >= share {
+                                break mine;
+                            }
+                            mine.push((at, manifest_of(backend, &background, &repos[at])));
                         }
-                        mine.push((at, manifest_of(backend, &background, &repos[at])));
-                    }
+                    })
                 })
             })
             .collect();

@@ -214,6 +214,10 @@ pub struct Tok {
     pub start: isize,
     /// One past the last source character of the token, or -1.
     pub end: isize,
+    /// Whether an unquoted blank stood inside a `${…}` of the token, which the shell splits the
+    /// expansion's value at: `${x:-gh pr merge 1}` is a whole command, and `${x:-"a b"}` one
+    /// word (#7709, round 3).
+    pub split_in_braces: bool,
 }
 
 impl Tok {
@@ -223,6 +227,7 @@ impl Tok {
             bare,
             start,
             end,
+            split_in_braces: false,
         }
     }
 
@@ -424,6 +429,89 @@ struct Lexer {
     before_esc: (bool, isize),
     /// The raw text of the `$'…'` being read, escapes still in it.
     ansi: Vec<char>,
+    /// How many parameter expansions (`${t%%|*}`) the word is inside, the outermost and each
+    /// nested `${` in it. While it is more than none, a blank or an operator character is part of
+    /// the word, as the shell reads it (#7709).
+    braces: usize,
+    /// Where the outermost `${` of the word was opened: the stream's cursor, the characters
+    /// pushed back, the token's length, its `bare`, `start` and quoting just past the `{`, and
+    /// whether a `${…}` the word closed before this one held a blank. A `${` that does not
+    /// close on its line, or that holds a substitution, is read again from there the way it
+    /// always was, and keeps what the closed one said (#7709, round 4).
+    brace_mark: Option<BraceMark>,
+    /// Whether this word's `${` was read again that way, so that no `${` in it is one word.
+    braces_off: bool,
+    /// How far into the stream a `${` that was read again had been read: no `${` opened before
+    /// there is read as one word, since it was inside that one and is read again with it. Kept
+    /// across words, so that each character is read at most twice and a line of unclosed `${`
+    /// costs its length, not its square (#7709, round 2).
+    braces_read_to: usize,
+    /// Whether the word held an unquoted blank inside its `${…}` ([`Tok::split_in_braces`]).
+    split_in_braces: bool,
+    /// Whether the word held an unquoted `;`, `&`, `|`, `<` or `>` inside its `${…}`, outside a
+    /// trim pattern: the shell does not split a value there, but `eval`, `sh -c` or a pipe to a
+    /// shell reads one as a line, so the line is read the old way too ([`on_either_reading`],
+    /// #7709, round 5).
+    operator_in_braces: bool,
+    /// Where each `${…}` the word is inside has got to, outermost first.
+    in_braces: Vec<InBrace>,
+    /// How many of [`Lexer::in_braces`], from the outermost, a nested `${` has already made
+    /// [`InBrace::Rest`]: a level never leaves `Rest`, so the next nested `${` marks only the
+    /// levels above, and a word of many nested `${` is read in linear time.
+    rest_below: usize,
+}
+
+/// How far into a `${…}` the lexer has read: an operator character in its trim pattern gives no
+/// text, so `f=${t%%|*}` (#7709) is read once, and one anywhere else may be run (round 5).
+///
+/// **Only a pattern that is certainly a trim is one** (round 6): a `%` or `#` right after a
+/// NAME, a positional parameter's digits, or one of the special parameters `@*?-$`. After a
+/// `!` it never is, since `${!#}` is the last positional parameter and `${!#:+…}` gives text,
+/// and after a leading `#` neither, since `${##}` is a length. Whatever is not certain is
+/// [`InBrace::Rest`], and the line is read the old way too.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InBrace {
+    /// Before any character of its parameter.
+    Start,
+    /// A NAME so far.
+    Name,
+    /// A positional parameter's digits so far.
+    Digits,
+    /// One special parameter, `@`, `*`, `?`, `-` or `$`.
+    Special,
+    /// A `%`, `%%`, `#` or `##` pattern, which only trims the value.
+    Trim,
+    /// Anything else: a default, an alternative, a substitution, a subscript, a length, an
+    /// indirection.
+    Rest,
+}
+
+impl InBrace {
+    /// Where `c`, read here, leaves the `${…}`.
+    fn after(self, c: char) -> Self {
+        match (self, c) {
+            (Self::Start, c) if c.is_ascii_alphabetic() || c == '_' => Self::Name,
+            (Self::Start, c) if c.is_ascii_digit() => Self::Digits,
+            (Self::Start, '@' | '*' | '?' | '-' | '$') => Self::Special,
+            (Self::Name, c) if c.is_ascii_alphanumeric() || c == '_' => Self::Name,
+            (Self::Digits, c) if c.is_ascii_digit() => Self::Digits,
+            (Self::Name | Self::Digits | Self::Special, '%' | '#') => Self::Trim,
+            (Self::Trim, _) => Self::Trim,
+            _ => Self::Rest,
+        }
+    }
+}
+
+/// Where a word's outermost `${` opened ([`Lexer::brace_mark`]).
+struct BraceMark {
+    at: usize,
+    pushed: Vec<char>,
+    len: usize,
+    bare: bool,
+    start: isize,
+    quoted: bool,
+    split_in_braces: bool,
+    operator_in_braces: bool,
 }
 
 impl Lexer {
@@ -443,6 +531,14 @@ impl Lexer {
             dollars: 0,
             before_esc: (true, -1),
             ansi: Vec::new(),
+            braces: 0,
+            brace_mark: None,
+            braces_off: false,
+            braces_read_to: 0,
+            split_in_braces: false,
+            operator_in_braces: false,
+            in_braces: Vec::new(),
+            rest_below: 0,
         }
     }
 
@@ -472,6 +568,35 @@ impl Lexer {
         self.state = value;
     }
 
+    /// Whether the `{` just read opens a parameter expansion (#7709): it follows a `$` the word
+    /// holds unquoted and unescaped, and the next character begins one, a name, a digit or one of
+    /// `#?@*!$-`. A bash 5.3 `${ …; }` or `${| …; }`, which runs a command, is left to the
+    /// reading it always had, which splits it at its operators.
+    fn opens_a_parameter_expansion(&self) -> bool {
+        if !self.cfg.bash_quoting
+            || self.braces_off
+            || BRACES_OFF.get()
+            || self.dollars.is_multiple_of(2)
+            || self.instream.i < self.braces_read_to
+        {
+            return false;
+        }
+        self.next_begins_a_parameter()
+    }
+
+    /// Whether the character after the one just read begins a parameter expansion's name: a
+    /// letter, a digit or one of `#?@*!$-`. A blank, a newline or a `|` after `${` opens a bash
+    /// 5.3 funsub instead, which runs a command.
+    fn next_begins_a_parameter(&self) -> bool {
+        let next = self
+            .pushback_chars
+            .last()
+            .or_else(|| self.instream.s.get(self.instream.i));
+        next.is_some_and(|c| {
+            c.is_ascii_alphanumeric() || matches!(c, '_' | '#' | '?' | '@' | '*' | '!' | '$' | '-')
+        })
+    }
+
     /// A shell begins a comment at `#` only where a WORD BEGINS. `shlex` honours it mid-word
     /// too and swallows the rest of the line, so `echo hi#; cat <vault>` — which runs the `cat`
     /// in bash — lexed as a lone `echo hi` and every later command became invisible.
@@ -489,6 +614,13 @@ impl Lexer {
         self.start = -1;
         self.end = -1;
         self.dollars = 0;
+        self.braces = 0;
+        self.brace_mark = None;
+        self.braces_off = false;
+        self.split_in_braces = false;
+        self.operator_in_braces = false;
+        self.in_braces.clear();
+        self.rest_below = 0;
         let mut quoted = false;
         let mut escapedstate = St::Space;
         loop {
@@ -600,10 +732,114 @@ impl Lexer {
                     }
                 }
                 St::Word | St::Punct => {
+                    // A `${` that never closes, or that holds a substitution, is read from its
+                    // `{` on as it always was: split at its operators, so that the commands a
+                    // `$(…)`, a `` `…` ``, a `<(…)` or a zsh `=(…)` in it runs stay segments
+                    // of their own, and an unclosed one reads as the recorded answers read it.
+                    // A nested bash 5.3 funsub (`${ …; }`, `${| …; }`) runs commands too. And
+                    // one is never read past its line: a heredoc's body is its own input, so a
+                    // `${` in it that its line leaves open hides nothing after the delimiter
+                    // (`bash <<'EOF'`, #7709, round 4).
+                    if self.state == St::Word
+                        && self.braces > 0
+                        && nextchar.is_none_or(|c| {
+                            matches!(c, '(' | '`' | '\n')
+                                || (c == '{'
+                                    && self.dollars % 2 == 1
+                                    && !self.next_begins_a_parameter())
+                        })
+                        && let Some(mark) = self.brace_mark.take()
+                    {
+                        self.braces_read_to = self.braces_read_to.max(self.instream.i);
+                        self.instream.i = mark.at;
+                        self.pushback_chars = mark.pushed;
+                        self.token.truncate(mark.len);
+                        (self.bare, self.start, quoted) = (mark.bare, mark.start, mark.quoted);
+                        self.braces = 0;
+                        self.in_braces.clear();
+                        self.rest_below = 0;
+                        self.braces_off = true;
+                        self.split_in_braces = mark.split_in_braces;
+                        self.operator_in_braces = mark.operator_in_braces;
+                        self.dollars = 0;
+                        continue;
+                    }
                     let Some(c) = nextchar else {
                         self.set_state(St::Eof);
                         break;
                     };
+                    if self.state == St::Word
+                        && self.braces > 0
+                        && (QUOTES.contains(c) || c == ESCAPE)
+                    {
+                        // A quote or an escape inside a parameter's name is no parameter a trim
+                        // can follow: dash ends `${y\}#|…}` at the escaped `}` and runs the rest
+                        // (round 6 review).
+                        if let Some(
+                            top @ (InBrace::Start
+                            | InBrace::Name
+                            | InBrace::Digits
+                            | InBrace::Special),
+                        ) = self.in_braces.last_mut()
+                        {
+                            *top = InBrace::Rest;
+                        }
+                    }
+                    if self.state == St::Word
+                        && self.braces > 0
+                        && !QUOTES.contains(c)
+                        && c != ESCAPE
+                    {
+                        // Inside `${…}` the word runs to the first unquoted `}`, past blanks and
+                        // operator characters. bash and dash count only a nested `${` on the way:
+                        // a bare `{` opens nothing, so `${s#{}` ends at its first `}`. zsh counts
+                        // every `{`, so it reads such a line as fewer commands, never more.
+                        let here = self.in_braces.last().copied();
+                        match c {
+                            '{' if self.dollars % 2 == 1 => {
+                                // A nested `${` makes no enclosing `${` certainly a trim: dash
+                                // ends a bad substitution at its first `}`, so `${${y}%…}` and
+                                // `${x%${z${y}}|…}` close early and run what follows. Every
+                                // `${` it sits in is read the old way too (round 6 review).
+                                let depth = self.in_braces.len();
+                                if let Some(above) =
+                                    self.in_braces.get_mut(self.rest_below.min(depth)..)
+                                {
+                                    above.fill(InBrace::Rest);
+                                }
+                                self.rest_below = depth;
+                                self.braces += 1;
+                                self.in_braces.push(InBrace::Start);
+                            }
+                            '{' if self.dollars > 0 => {
+                                // `$${`: bash reads the PID and a plain `{`, but a shell that
+                                // counted it as a nested `${` would end the word elsewhere, so
+                                // nothing after it is certainly a trim (round 6).
+                                if let Some(top) = self.in_braces.last_mut() {
+                                    *top = InBrace::Rest;
+                                }
+                            }
+                            '}' => {
+                                self.braces -= 1;
+                                self.in_braces.pop();
+                                self.rest_below = self.rest_below.min(self.in_braces.len());
+                            }
+                            c if WHITESPACE.contains(c) => self.split_in_braces = true,
+                            ';' | '&' | '|' | '<' | '>' if here != Some(InBrace::Trim) => {
+                                self.operator_in_braces = true;
+                            }
+                            _ => {}
+                        }
+                        if c != '{'
+                            && c != '}'
+                            && let Some(top) = self.in_braces.last_mut()
+                        {
+                            *top = top.after(c);
+                        }
+                        self.dollars = if c == '$' { self.dollars + 1 } else { 0 };
+                        self.token.push(c);
+                        continue;
+                    }
                     if self.cfg.whitespace.contains(c) {
                         self.set_state(St::Space);
                         if !self.token.is_empty() || quoted {
@@ -651,8 +887,24 @@ impl Lexer {
                         || QUOTES.contains(c)
                         || !self.cfg.punctuation.contains(c)
                     {
+                        let opens = c == '{' && self.opens_a_parameter_expansion();
                         self.dollars = if c == '$' { self.dollars + 1 } else { 0 };
                         self.token.push(c);
+                        if opens {
+                            self.braces = 1;
+                            self.in_braces = vec![InBrace::Start];
+                            self.rest_below = 0;
+                            self.brace_mark = Some(BraceMark {
+                                at: self.instream.i,
+                                pushed: self.pushback_chars.clone(),
+                                len: self.token.len(),
+                                bare: self.bare,
+                                start: self.start,
+                                quoted,
+                                split_in_braces: self.split_in_braces,
+                                operator_in_braces: self.operator_in_braces,
+                            });
+                        }
                     } else {
                         self.pushback_chars.push(c);
                         self.set_state(St::Space);
@@ -663,6 +915,10 @@ impl Lexer {
                     }
                 }
             }
+        }
+        if self.split_in_braces || self.operator_in_braces {
+            // For [`on_either_reading`]: a word of any reading that holds a `${`.
+            SPLIT_IN_BRACES.set(true);
         }
         let result: String = std::mem::take(&mut self.token).into_iter().collect();
         // posix: an empty token that was never quoted is end of input, and `''` is a real token.
@@ -681,7 +937,10 @@ pub fn lex(cmd: &str) -> Result<Vec<Tok>, LexError> {
         match lexer.read_token()? {
             // `None`, not `""`: `cat ''` produces a real empty token.
             None => return Ok(out),
-            Some(text) => out.push(Tok::new(text, lexer.bare, lexer.start, lexer.end)),
+            Some(text) => out.push(Tok {
+                split_in_braces: lexer.split_in_braces,
+                ..Tok::new(text, lexer.bare, lexer.start, lexer.end)
+            }),
         }
     }
 }
@@ -1045,6 +1304,88 @@ pub fn joined_segments(toks: Vec<Tok>) -> Vec<JoinedSegment> {
 }
 
 std::thread_local! {
+    /// Whether [`lex`] reads every `${` as it always did, split at its blanks and operators:
+    /// the second reading of [`on_either_reading`].
+    static BRACES_OFF: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Whether [`lex`] has made a word in whose `${…}` an unquoted blank stood
+    /// ([`Tok::split_in_braces`]), or an operator character outside a trim pattern, since the
+    /// innermost [`on_either_reading`] began.
+    static SPLIT_IN_BRACES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// **`judge`, and, when a `${…}` it read held an unquoted blank or operator character, `judge`
+/// again with every `${` read as it always was** (#7709, rounds 4 and 5): split at its blanks
+/// and its operators. What the
+/// first reading finds stands; where it finds nothing, the second's answer is the answer.
+///
+/// The shell splits what such an expansion gives into words, and a program or a script handed
+/// them may run them, wherever the word stands: after a redirection, behind `env`, `timeout`,
+/// `find -exec` or `ssh`, or handed to `eval`. No guard is to see fewer commands than bash
+/// runs, so a line the `${` reading would show a guard as fewer words is read the old way too.
+/// And `eval`, `sh -c` or a pipe to a shell reads a value as a line, so a `;`, `&`, `|`, `<`
+/// or `>` in one counts as a blank does (`eval ${x:-cat<f}`, round 5). A line whose `${…}`
+/// holds neither, or holds an operator only in a `%` or `#` trim pattern, which gives no text
+/// (`f=${t%%|*}`, the line #7709 was filed for), is read once. Nests: inside a second reading, `judge` is read once, already the old way.
+pub fn on_either_reading<T>(judge: impl FnMut() -> Option<T>) -> Option<T> {
+    read_twice(judge, Option::is_some, Option::or)
+}
+
+/// **`judge` on both readings of [`on_either_reading`], and `both` of the two answers** (#7709,
+/// round 6): for an answer that is a list or a grade, where the first reading's answer is not
+/// the whole of it. `both` gets the first reading's answer, then the old reading's. A line
+/// whose `${…}` holds no blank or operator outside a trim pattern is read once.
+pub fn on_both_readings<T>(judge: impl FnMut() -> T, both: impl FnOnce(T, T) -> T) -> T {
+    read_twice(judge, |_| false, both)
+}
+
+/// `judge`, and again the old way where a `${…}` it read asked for that and the first answer is
+/// not `settled`, the two answers put together by `both`.
+fn read_twice<T>(
+    mut judge: impl FnMut() -> T,
+    settled: impl FnOnce(&T) -> bool,
+    both: impl FnOnce(T, T) -> T,
+) -> T {
+    if BRACES_OFF.get() {
+        return judge();
+    }
+    let outer = SPLIT_IN_BRACES.replace(false);
+    let first = judge();
+    let split = SPLIT_IN_BRACES.get();
+    SPLIT_IN_BRACES.set(outer || split);
+    if !split || settled(&first) {
+        return first;
+    }
+    let second = {
+        let _old_way = BracesOff::on();
+        judge()
+    };
+    both(first, second)
+}
+
+/// Whether [`lex`] reads every `${` the old way now ([`on_either_reading`]'s second reading).
+/// A cache of what a text reads as keys on it, since the text alone no longer says.
+pub(crate) fn braces_off() -> bool {
+    BRACES_OFF.get()
+}
+
+/// **Every `${` is read the old way while this lives** ([`on_either_reading`]), and as before
+/// once it is dropped, a panic's unwinding included.
+struct BracesOff;
+
+impl BracesOff {
+    fn on() -> Self {
+        BRACES_OFF.set(true);
+        Self
+    }
+}
+
+impl Drop for BracesOff {
+    fn drop(&mut self) {
+        BRACES_OFF.set(false);
+    }
+}
+
+std::thread_local! {
     /// Whether a walk on this thread has met a string nested past [`MAX_NESTING`] since the
     /// innermost [`too_deep_within`] began: [`walk_segments`] sets it, and only that reads it.
     static TOO_DEEP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -1082,6 +1423,8 @@ pub fn met_a_string_too_deep() {
 struct Walked {
     joined: JoinedSegment,
     own: Vec<Tok>,
+    /// The texts of its words, outward and own, that [`Tok::split_in_braces`].
+    split_in_braces: Vec<String>,
 }
 
 /// What [`Reading::own`] writes where a substitution stands in the command around it, after
@@ -1114,6 +1457,10 @@ pub struct Reading {
     /// Whether a `|` or `|&` hands this segment its stdin: the segment before it writes what this
     /// one reads, which may become words of a command it runs (`echo pr merge 5 | xe gh`).
     pub own_piped: bool,
+    /// The texts of the segment's words, [`Reading::outward`]'s and [`Reading::own`]'s, in whose
+    /// `${…}` an unquoted blank stood ([`Tok::split_in_braces`]): the shell splits what such a
+    /// word gives into words, and as a program it is a whole command (#7709, round 3).
+    pub split_in_braces: Vec<String>,
 }
 
 /// [`segment_argv`]'s segments, each with its [`Reading::own`] words as well, both readings
@@ -1128,11 +1475,12 @@ pub fn segment_readings(cmd: &str) -> Vec<Reading> {
     // each walk the same text, and the walk is the cost of it (#7245). A reading is a pure
     // function of the text, so the last few large ones are kept; the one effect it has, the
     // report of a reading nested too deep, is made again on a hit.
+    let old_way = braces_off();
     if let Some((too_deep, readings)) = LARGE_READINGS.with(|kept| {
         kept.borrow()
             .iter()
-            .find(|(text, ..)| text == cmd)
-            .map(|(_, too_deep, readings)| (*too_deep, readings.clone()))
+            .find(|(text, braces, ..)| text == cmd && *braces == old_way)
+            .map(|(.., too_deep, readings)| (*too_deep, readings.clone()))
     }) {
         if too_deep {
             TOO_DEEP.with(|flag| flag.set(true));
@@ -1147,7 +1495,7 @@ pub fn segment_readings(cmd: &str) -> Vec<Reading> {
         if kept.len() >= LARGE_READINGS_KEPT {
             kept.remove(0);
         }
-        kept.push((cmd.to_owned(), too_deep, readings.clone()));
+        kept.push((cmd.to_owned(), old_way, too_deep, readings.clone()));
     });
     readings
 }
@@ -1158,10 +1506,15 @@ const LARGE_READING: usize = 4096;
 /// body, with room for the merge reading's.
 const LARGE_READINGS_KEPT: usize = 4;
 
+/// A large text [`segment_readings`] kept: the text, whether every `${` in it was read the old
+/// way ([`braces_off`]), whether its walk met a nesting past [`MAX_NESTING`], and its readings.
+type KeptReading = (String, bool, bool, Vec<Reading>);
+
 std::thread_local! {
-    /// The large texts [`segment_readings`] has read on this thread, each with whether its walk
-    /// met a nesting past [`MAX_NESTING`].
-    static LARGE_READINGS: std::cell::RefCell<Vec<(String, bool, Vec<Reading>)>> =
+    /// The large texts [`segment_readings`] has read on this thread, each with whether it was
+    /// read with every `${` the old way ([`braces_off`]) and whether its walk met a nesting
+    /// past [`MAX_NESTING`].
+    static LARGE_READINGS: std::cell::RefCell<Vec<KeptReading>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -1182,6 +1535,7 @@ fn read_segments(cmd: &str) -> Vec<Reading> {
         .into_iter()
         .map(|w| Reading {
             own_piped: matches!(w.joined.before.as_deref(), Some("|" | "|&")),
+            split_in_braces: w.split_in_braces,
             outward: w.joined.argv,
             own_source: w.own.iter().map(source).collect(),
             own_bare: w.own.iter().map(|t| t.bare).collect(),
@@ -1221,6 +1575,14 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<Walked>, usize) {
         own: Vec<Tok>,
     }
     let texts = |toks: Vec<Tok>| toks.into_iter().map(|t| t.text).collect::<Vec<_>>();
+    let split_in_braces = |seg: &Seg| {
+        seg.outward
+            .iter()
+            .chain(&seg.own)
+            .filter(|t| t.split_in_braces)
+            .map(|t| t.text.clone())
+            .collect::<Vec<_>>()
+    };
 
     let mut out: Vec<Walked> = Vec::new();
     let mut open_segs: Vec<Seg> = vec![Seg::default()]; // outermost first
@@ -1232,12 +1594,14 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<Walked>, usize) {
     // rest of the word the substitution stands in (`A=$(true)x`).
     let mut word_goes_on_at: Option<isize> = None;
     let mut close = |seg: Seg, before: &mut Option<String>, after: &str| {
+        let split_in_braces = split_in_braces(&seg);
         out.push(Walked {
             joined: JoinedSegment {
                 argv: texts(seg.outward),
                 before: before.clone(),
                 after: Some(after.to_string()),
             },
+            split_in_braces,
             own: seg.own,
         });
         *before = Some(after.to_string());
@@ -1338,6 +1702,7 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<Walked>, usize) {
                 if let Some(word) = seg.own.last_mut() {
                     word.text.push_str(&t.text);
                     word.bare = word.bare && t.bare;
+                    word.split_in_braces |= t.split_in_braces;
                     word.end = t.end;
                 }
             }
@@ -1352,12 +1717,14 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<Walked>, usize) {
         deepest = deepest.max(open_segs.len() - 1);
     }
     for (seg, before) in open_segs.into_iter().zip(befores) {
+        let split_in_braces = split_in_braces(&seg);
         out.push(Walked {
             joined: JoinedSegment {
                 argv: texts(seg.outward),
                 before,
                 after: None,
             },
+            split_in_braces,
             own: seg.own,
         });
     }

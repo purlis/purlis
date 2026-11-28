@@ -154,13 +154,16 @@ impl Facts {
     /// **The risk of running `line`**: a push to a protected branch, then a production host
     /// any URL in it reaches.
     pub fn of_command(&self, line: &str) -> Option<Risk> {
-        self.of_line(line, 0, None)
+        // Read twice where a `${…}` held a blank or an operator, and the old reading's risk,
+        // the first in the line's order, kept over the first reading's
+        // ([`shellseg::on_both_readings`], #7709, rounds 5 and 6).
+        shellseg::on_both_readings(|| self.of_line(line, 0, None), old_reading_first)
     }
 
     /// **The risk of running `line` in a chat's folder** (#6178): as [`Self::of_command`], and a
     /// push that names no branch is read by the branch `pushes` says it would push.
     pub fn of_command_in(&self, line: &str, pushes: PushesIn<'_>) -> Option<Risk> {
-        self.of_line(line, 0, Some(pushes))
+        shellseg::on_both_readings(|| self.of_line(line, 0, Some(pushes)), old_reading_first)
     }
 
     /// **The risk of a tool's call**, from its input: a production host any URL in it reaches.
@@ -462,6 +465,12 @@ pub fn pushes_from(folder: &Path) -> Option<Pushes> {
         current: Some(current),
         to,
     })
+}
+
+/// What [`Facts::of_command`] answers of a line read both ways: the old reading's risk where it
+/// has one, since it reads the line's commands in their order as before, else the first's.
+fn old_reading_first(first: Option<Risk>, old: Option<Risk>) -> Option<Risk> {
+    old.or(first)
 }
 
 /// A delete of `first`, and `more` in all.

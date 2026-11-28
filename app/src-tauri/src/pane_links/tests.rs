@@ -12,6 +12,7 @@ fn url(text: &str) -> Candidate {
         target: None,
         kind: Kind::Url,
         text: text.to_owned(),
+        joined: false,
     }
 }
 
@@ -179,6 +180,27 @@ fn a_candidate_the_window_sends_without_a_target_or_with_a_null_one_has_none() {
 }
 
 #[test]
+fn a_candidate_the_window_read_across_rows_reaches_the_core_as_joined_and_one_without_the_word_not()
+{
+    // The window says `joined` only for words read across a break the program wrote (#7930).
+    let read = |json: serde_json::Value| -> Candidate {
+        serde_json::from_value::<LinkCandidate>(json)
+            .expect("deserialises")
+            .into()
+    };
+
+    assert!(
+        read(serde_json::json!({"kind": "url", "text": "https://a.example/", "joined": true}))
+            .joined
+    );
+    assert!(!read(serde_json::json!({"kind": "url", "text": "https://a.example/"})).joined);
+    assert!(
+        !read(serde_json::json!({"kind": "url", "text": "https://a.example/", "joined": null}))
+            .joined
+    );
+}
+
+#[test]
 fn the_window_s_words_for_the_answers_are_these() {
     // The shape the window reads (`paneLinks.ts`).
     let json = |answer: &LinkOpened| serde_json::to_value(answer).expect("serialises");
@@ -245,6 +267,7 @@ fn file(text: &str) -> Candidate {
         target: None,
         kind: Kind::File,
         text: text.to_owned(),
+        joined: false,
     }
 }
 
@@ -450,6 +473,7 @@ fn chat(text: &str) -> Candidate {
         target: None,
         kind: Kind::Chat,
         text: text.to_owned(),
+        joined: false,
     }
 }
 
@@ -798,6 +822,7 @@ fn marked(text: &str, target: &str) -> Candidate {
         kind: Kind::Osc8,
         text: text.to_owned(),
         target: Some(target.to_owned()),
+        joined: false,
     }
 }
 
@@ -1038,6 +1063,7 @@ fn an_issue_s_number_says_it_is_one_and_opens_its_forge_page_in_the_browser() {
         target: None,
         kind: Kind::Issue,
         text: "#6223".into(),
+        joined: false,
     };
     let page = "https://github.com/purlis/purlis/issues/6223";
 

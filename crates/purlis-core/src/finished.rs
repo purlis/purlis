@@ -503,9 +503,10 @@ const AT_ONCE: usize = 8;
 /// workspace of about 290 folders took 21 minutes read one by one. A thread that panics
 /// panics this one, once the others have read what is left.
 ///
-/// Each thread runs its git as this one does ([`git::within`]) and says the work is alive
-/// after each item it read ([`crate::hookwire::alive`]): a chat's wait on the app bounds a
-/// silence, and a workspace may hold any number of folders.
+/// Each thread runs its git as this one does ([`git::within`]), counts what it starts where
+/// this one does ([`crate::forklock::counting`]), and says the work is alive after each item it
+/// read ([`crate::hookwire::alive`]): a chat's wait on the app bounds a silence, and a
+/// workspace may hold any number of folders.
 pub(crate) fn each_at_once<T: Sync, R: Send>(
     items: &[T],
     judge: impl Fn(&T) -> R + Sync,
@@ -513,6 +514,7 @@ pub(crate) fn each_at_once<T: Sync, R: Send>(
     use std::sync::atomic::{AtomicUsize, Ordering};
     let isolation = git::isolation();
     let pulse = alive::held();
+    let counting = crate::forklock::counting::carried();
     let threads = std::thread::available_parallelism()
         .map_or(1, std::num::NonZeroUsize::get)
         .clamp(1, AT_ONCE)
@@ -524,15 +526,17 @@ pub(crate) fn each_at_once<T: Sync, R: Send>(
                 scope.spawn(|| {
                     git::within(isolation.as_ref(), || {
                         alive::within(pulse.as_ref(), || {
-                            let mut read = Vec::new();
-                            loop {
-                                let at = next.fetch_add(1, Ordering::Relaxed);
-                                let Some(item) = items.get(at) else {
-                                    return read;
-                                };
-                                read.push((at, judge(item)));
-                                alive::beat();
-                            }
+                            counting.within(|| {
+                                let mut read = Vec::new();
+                                loop {
+                                    let at = next.fetch_add(1, Ordering::Relaxed);
+                                    let Some(item) = items.get(at) else {
+                                        return read;
+                                    };
+                                    read.push((at, judge(item)));
+                                    alive::beat();
+                                }
+                            })
                         })
                     })
                 })
