@@ -4214,3 +4214,25 @@ fn the_build_and_version_managers_and_compiler_wrappers_of_7964_are_offered_no_r
         refused_as_running_others(name);
     }
 }
+
+/// The package managers and installers #7964's comment names, each of which runs a package's
+/// scripts or a build's: Slackware's `upgradepkg`, `xbps-reconfigure` (a package's `INSTALL`
+/// script), the AUR helpers `pikaur`, `trizen`, `aura`, `pamac` and `yaourt` (a `PKGBUILD`),
+/// and Arch's `pacstrap`, which runs `pacman` into a new root, and `arch-chroot`, which runs
+/// the command after it in one.
+#[test]
+fn the_package_managers_and_installers_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "upgradepkg",
+        "xbps-reconfigure",
+        "pikaur",
+        "trizen",
+        "aura",
+        "pamac",
+        "yaourt",
+        "pacstrap",
+        "arch-chroot",
+    ] {
+        refused_as_running_others(name);
+    }
+}

@@ -2985,6 +2985,22 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "icerun",
     "iceccd",
     "distccd",
+    // The package managers and installers #7964's comment names, refused whole, as
+    // `pacman`, `installpkg` and `xbps-install` are: Slackware's `upgradepkg` runs a
+    // package's `doinst.sh`, `xbps-reconfigure` its `INSTALL` script, the AUR helpers
+    // `pikaur`, `trizen`, `aura`, `pamac` and `yaourt` build a `PKGBUILD`, and Arch's
+    // `pacstrap` runs `pacman` into a new root. `arch-chroot`, which runs the command after
+    // it in one, is refused already by REFUSED_NAMES' `arch` and `chroot` meeting its forms
+    // by chance, so it has a row of its own (a unit test pins it).
+    "upgradepkg",
+    "xbps-reconfigure",
+    "pikaur",
+    "trizen",
+    "aura",
+    "pamac",
+    "yaourt",
+    "pacstrap",
+    "arch-chroot",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
