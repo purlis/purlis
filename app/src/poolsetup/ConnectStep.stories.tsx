@@ -1421,7 +1421,7 @@ export const TheAddWasNotTaken: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     const add = canvas.getByRole("button", { name: "Trust and create the pool" });
-    // Pressed once the runner image is offered: before, it waits for it, unavailable (#7871).
+    // It waits for the runner image, unavailable until then (#7871).
     await waitFor(() => expect(add).toBeEnabled(), SETTLES);
     // Pressed from the keyboard, not with `userEvent.click`: that one draws the button under a
     // pointer that is not there, until the engine's own pointer moves, which WebKit does when it

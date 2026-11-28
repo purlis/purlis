@@ -710,7 +710,7 @@ function ConfirmCa({
         reserve={["Trust this machine", "Trust and create the pool", "Continue"]}
         icon={<KeyRound aria-hidden size={16} />}
         pressing={busy}
-        busy={merged?.reading}
+        busy={merged?.readingImage}
         onMain={() =>
           merged && onTrustAndCreate ? onTrustAndCreate(ca.fingerprint) : onTrust(ca.fingerprint)
         }
@@ -776,7 +776,7 @@ function Confirm({
         reserve={["Trust this machine", "Trust and create the pool", "Continue"]}
         icon={<KeyRound aria-hidden size={16} />}
         pressing={busy}
-        busy={merged?.reading}
+        busy={merged?.readingImage}
         onMain={() =>
           merged && onTrustAndCreate ? onTrustAndCreate(key.fingerprint) : onTrust(key.fingerprint)
         }
@@ -937,6 +937,7 @@ export function ConnectStep({
   const [owned, setOwned] = useState(false);
   const [offered, setOffered] = useState<ReleaseImage>();
   const newPool = shown.pool === null && adding !== undefined;
+  const readingImage = offered === undefined;
   useEffect(() => {
     if (!newPool) return;
     let live = true;
@@ -952,15 +953,18 @@ export function ConnectStep({
   /** **Trust and create the pool** (#7191): every check from first contact to a linked runner. */
   const trustAndCreate = (fingerprint: string) => {
     // Until purlis has said which image it offers, there is nothing to say it names none (#7871).
-    if (!adding || offered === undefined) return;
+    if (!adding || readingImage) return;
     const named = offered && "image" in offered ? offered.image : undefined;
     const team = adding.chosen.image === "team" || named === undefined;
     const using = team ? adding.chosen.team.trim() : (named ?? "");
     const wanted = asked(naming.trim() === "" ? recommended : naming, using, adding.chosen);
     if (wanted === undefined || using === "") {
+      // Only a build that names none is said to; an image that could not be read says why.
       setTrouble(
         using === ""
-          ? "This build of purlis names no runner image, so give one by its digest."
+          ? offered.state === "trouble"
+            ? offered.trouble
+            : "This build of purlis names no runner image, so give one by its digest."
           : "A limit under Options isn't a whole number.",
       );
       return;
@@ -990,7 +994,7 @@ export function ConnectStep({
         onName: adding.type,
         owned,
         onOwned: setOwned,
-        reading: offered === undefined,
+        readingImage,
       }
     : undefined;
   const trust = (fingerprint: string) => {

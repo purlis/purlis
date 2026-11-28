@@ -498,7 +498,7 @@ describe("ConnectStep", () => {
     );
     const create = screen.getByRole("button", { name: "Trust and create the pool" });
     expect(create).toBeDisabled();
-    expect(screen.getByText(/Reading the runner image/)).toBeInTheDocument();
+    expect(screen.getByText(/Reading the runner image this build/)).toBeInTheDocument();
     await userEvent.click(create);
     expect(screen.queryByText(/names no runner image/)).not.toBeInTheDocument();
     expect(calls.some((call) => call.cmd === "pool_setup_trust_and_create")).toBe(false);
@@ -514,7 +514,7 @@ describe("ConnectStep", () => {
 
     offer({ state: "ours", image: IMAGE });
     await waitFor(() => expect(create).toBeEnabled());
-    expect(screen.queryByText(/Reading the runner image/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Reading the runner image this build/)).not.toBeInTheDocument();
     await userEvent.click(create);
     await waitFor(() =>
       expect(calls).toContainEqual({
@@ -568,6 +568,57 @@ describe("ConnectStep", () => {
     await waitFor(() => expect(create).toBeEnabled());
     await userEvent.click(create);
     expect(await screen.findByText(/names no runner image/)).toBeInTheDocument();
+    expect(calls.some((call) => call.cmd === "pool_setup_trust_and_create")).toBe(false);
+  });
+
+  it("says why the runner image could not be read, never that the build names none, when reading it failed (#7871)", async () => {
+    const calls = core({
+      runner_image_of_this_version: () => {
+        throw "The release's image list could not be read.";
+      },
+    });
+    const trusting = step({
+      next: {
+        id: "trust-machine",
+        label: "Trust this machine",
+        does: "Keeps this key for the pool.",
+        command: null,
+        url: null,
+      },
+      machine: {
+        route: "ssh://sam@build-box",
+        identity: null,
+        host: "build-box",
+        key: { algorithm: "ssh-ed25519", fingerprint: FINGERPRINT },
+        known: null,
+        trusted: null,
+        now: null,
+        engine: null,
+        over: "ssh",
+        tls: null,
+        ca: null,
+        trusted_ca: null,
+        ca_now: null,
+        context: null,
+      },
+    });
+    const adding = {
+      making: false,
+      set: vi.fn(),
+      typed: "lab",
+      type: vi.fn(),
+      chosen: NOTHING_CHOSEN,
+      choose: vi.fn(),
+    };
+    const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+    render(
+      <ConnectStep step={trusting} shown={shown(trusting)} plane="p" adding={adding} {...props} />,
+    );
+    const create = screen.getByRole("button", { name: "Trust and create the pool" });
+    await waitFor(() => expect(create).toBeEnabled());
+    await userEvent.click(create);
+    expect(await screen.findByText(/image list could not be read/)).toBeInTheDocument();
+    expect(screen.queryByText(/names no runner image/)).not.toBeInTheDocument();
     expect(calls.some((call) => call.cmd === "pool_setup_trust_and_create")).toBe(false);
   });
 
