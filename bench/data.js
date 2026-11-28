@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795830794486,
+  "lastUpdate": 1795831709273,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58296,6 +58296,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7748085,
             "unit": "ms",
             "extra": "median of 5 runs: 100.408, 101.603, 101.775, 101.814, 102.723 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ac02511d0bfe5d4faa10b9f6090072f825ef2054",
+          "message": "The in-app chat path is deleted: chats run only in the session host (#2005) (#7829)\n\n* The in-app chat path is deleted: chats run only in the session host (#2005)\n\nThe start-time switch PURLIS_CHATS_IN_THE_HOST and the window's own way of\nrunning a chat are gone (ADR 0068, Ruled 3): every plane's chats run in the\nsession host, and with none every start is refused with why (host::NoHost).\nA launch that still has the switch set logs that it is no longer read.\n\nDeleted with it, as they served only the way back: the put-back gate\n(Planes::putting_back_chats_after, PutBack::Refused), the session host's\nending of a host it finds (ending_a_host_it_finds, before_chats_are_put_back,\nend_the_one_serving) and their tests, and the behaviour suite's in-window\ntarget. The in-process Sessions stays as a test-only stand-in under the chats\nand planes tests (sessions/in_this_process.rs, #[cfg(test)]).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CWZQ3S4F4X1RK2BXMKVXFC\nPurlis-Persona: steward\n\n* Review of #2005: the relaunch check's log line is said again, docs and copy corrected\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CWZQ3S4F4X1RK2BXMKVXFC\nPurlis-Persona: steward\n\n* The stand-in's tests that run themselves again name their new path\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CWZQ3S4F4X1RK2BXMKVXFC\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T01:17:10Z",
+          "tree_id": "b47a202e5ccb50a1271756028265869c7b46d3d0",
+          "url": "https://github.com/purlis/purlis/commit/ac02511d0bfe5d4faa10b9f6090072f825ef2054"
+        },
+        "date": 1795831701989,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.33090600000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.322, 0.327, 0.331, 0.334, 0.342 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5690265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.374, 16.468, 16.569, 16.660, 16.695 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.9203715,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.371, 100.735, 100.920, 101.137, 101.519 ms"
           }
         ]
       }
