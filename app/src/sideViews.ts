@@ -10,9 +10,9 @@
  */
 /**
  * **One of purlis's own views**: the left side's Chats and Explorer (#1673), Search and Changes
- * (#1676), and Repos in the left half of the Panel (#1737), Changes beside it since #1739, and
- * the right side's Asks and Updates (#5644, which took the Inbox's place), Personas and Vaults
- * (#1678), with Memory, Todos and Sessions in
+ * (#1676), Skills (#3266), and Repos in the left half of the Panel (#1737), Changes beside it
+ * since #1739, and the right side's Asks and Updates (#5644, which took the Inbox's place),
+ * Personas and Vaults (#1678), with Memory, Todos and Sessions in
  * the right half of the Panel (#1738). Data, as a region is: the catalogue says which region
  * holds it, the placement says which is open, and
  * `RegionFrame` draws the bar and the views from that.
@@ -57,39 +57,6 @@ export const panelKeyOf = (view: PanelViewId): string => view.slice("panel:".len
 export const isPanelView = (view: string): view is PanelViewId =>
   view.startsWith("panel:") && view.length > "panel:".length;
 
-/**
- * **purlis's own views behind a preview** (SK-55, #3266): the Skills view, only while the Skill
- * studio's preview is on. While it is off the view is drawn nowhere and its place keeps it, as an
- * extension's panel is kept while its extension contributes nothing: the side opens on its first
- * view, and the person's pick comes back with the preview.
- */
-export const PREVIEWED_VIEWS: readonly OwnViewId[] = ["skills"];
-
-/** No view behind a preview is on: what a window draws while every preview is off. */
-export const NO_PREVIEWS: readonly OwnViewId[] = [];
-
-/**
- * **The views behind a preview drawn now** (#3266, #3308): each while its preview is on (`on`).
- * Until the window has heard whether it is (`on` `undefined`, the first frames of a launch), a
- * view a region was left on (`picked`) is held there, drawn empty, so a side left on Skills does
- * not show its first view for a moment and then come back; every other one waits unseen, so no
- * icon shows for a moment where the preview is off.
- */
-export function previewsDrawn(
-  on: boolean | undefined,
-  picked: readonly (string | undefined)[],
-): readonly OwnViewId[] {
-  if (on !== undefined) return on ? PREVIEWED_VIEWS : NO_PREVIEWS;
-  const held = PREVIEWED_VIEWS.filter((view) => picked.includes(view));
-  if (held.length === 0) return NO_PREVIEWS;
-  return held.length === PREVIEWED_VIEWS.length ? PREVIEWED_VIEWS : held;
-}
-
-/** **Whether `view` is drawn only while it is present now**: an extension's panel while it is
- *  contributed, a view behind a preview while that preview is on. */
-export const drawnOnlyPresent = (view: string): boolean =>
-  isPanelView(view) || (PREVIEWED_VIEWS as readonly string[]).includes(view);
-
 /** The right sidebar's own views, in its bar's order (#1678, #1738): the attention region's.
  *  Asks is first (#1692, I-2; ADR 0119, #5644): what waits on the person heads the "for you"
  *  side, and the side opens on it. Updates follows it: the updates the Inbox listed after its
@@ -113,7 +80,7 @@ export const VIEWS: Record<OwnViewId, { name: string }> = {
   // #1676: the Search tab's content, in the side; and the repos' state, which the bottom
   // region drew until it went (B-7).
   search: { name: "Search" },
-  // #3266: this workspace's skills by level, behind the Skill studio's preview.
+  // #3266: this workspace's skills by level.
   skills: { name: "Skills" },
   changes: { name: "Changes" },
   // #1737: Explorer's *Repos and branches*, a view of its own in the left half of the Panel.

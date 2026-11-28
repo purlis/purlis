@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `purlis skill new | edit | mv | rm | restore` on a temporary project (SK-7, #2770): the verbs
-//! the Skill studio calls, from the command line. Behind the `skill-studio` flag. The project is
+//! the Skill studio calls, from the command line. The project is
 //! no git repository, so each change is made on disk and left for the next save; that each one
 //! is one commit is the core's seam test (`skills/verbs/tests.rs`).
 
@@ -51,7 +51,6 @@ impl Project {
             .env("HOME", self.at.join("home"))
             .env("PURLIS_CONFIG_HOME", self.at.join("home/config"))
             .env("PURLIS_DATA_HOME", self.at.join("data"))
-            .env("PURLIS_SKILL_STUDIO", "1")
             .env("NO_COLOR", "1")
             .env_remove("VISUAL")
             .env_remove("EDITOR");

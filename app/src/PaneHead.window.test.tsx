@@ -21,7 +21,6 @@ import type { Moved } from "./bindings";
 import { onTheWire } from "./chatEvents.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { placementFor } from "./ui/tooltip/Tooltip";
-import { setSkillStudioOn } from "./skillStudio";
 import { findRow, findTree } from "./ui/tree/tree.testkit";
 
 /**
@@ -128,7 +127,7 @@ let usage: unknown = null;
 
 function core(chat: typeof CHAT | typeof SHELL = CHAT, listed: Promise<void> = Promise.resolve()) {
   mockIPC(
-    (cmd, args) => {
+    (cmd) => {
       if (cmd === "chat_usage") return usage;
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [chat];
@@ -149,7 +148,6 @@ function core(chat: typeof CHAT | typeof SHELL = CHAT, listed: Promise<void> = P
       if (cmd === "asks_waiting") return { plane: PLANE, asks: [] };
       if (cmd === "mcp_failures") return [];
       if (cmd === "smart_closing") return [];
-      if (cmd === "set_skill_studio_on") return (args as { on: boolean }).on;
       return null;
     },
     { shouldMockEvents: true },
@@ -418,9 +416,7 @@ describe("a chat wrapping up (#4760)", () => {
 describe("what a chat uses now, on its pane head (#5524)", () => {
   it("draws the skill run open in the chat on its pane head, and none on its tab", async () => {
     mockIPC(
-      (cmd, args) => {
-        if (cmd === "skill_studio_on") return true;
-        if (cmd === "set_skill_studio_on") return (args as { on: boolean }).on;
+      (cmd) => {
         if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
         if (cmd === "opened_chats") return [CHAT];
         if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
@@ -437,8 +433,6 @@ describe("what a chat uses now, on its pane head (#5524)", () => {
       },
       { shouldMockEvents: true },
     );
-    // The studio is on: what the window heard of it before this test is kept (`skillStudio.ts`).
-    await setSkillStudioOn(true);
     render(<App />);
     await screen.findByTestId("pane");
 
@@ -463,7 +457,6 @@ describe("what a chat uses now, on its pane head (#5524)", () => {
     const chip = await screen.findByTestId("pane-skill-run");
     expect(head()).toContainElement(chip);
     expect(chip.closest('[data-strip="Tabs"]')).toBeNull();
-    await setSkillStudioOn(false);
   });
 });
 
@@ -546,13 +539,8 @@ describe("a narrow pane's head", () => {
   });
 
   describe("what the chat uses now (#5614)", () => {
-    afterEach(async () => {
-      await setSkillStudioOn(false);
-    });
-
-    /** Chat 4 has the `deploy` skill's run open, with the studio on to say it. */
+    /** Chat 4 has the `deploy` skill's run open. */
     async function aSkillRunOpen() {
-      await setSkillStudioOn(true);
       await act(() =>
         emit(
           ...onTheWire("chat-skill-run", {

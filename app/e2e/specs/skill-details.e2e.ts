@@ -10,8 +10,7 @@ import { studioMore, studioSkill } from "../studio.js";
 
 /**
  * **A skill's page: its state, history and uses** (SK-19, #2782; its page in the studio, #3682),
- * in the built app against the real core, with the `skill-studio` flag on for the run
- * (`wdio.conf.ts`).
+ * in the built app against the real core.
  *
  * The spec lays a project skill on disk whose text names a skill there is none of, opens its page
  * in the Skill studio, and finds the broken reference marked on Overview and its History drawn.

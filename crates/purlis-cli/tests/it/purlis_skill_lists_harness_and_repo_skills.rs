@@ -63,7 +63,6 @@ impl Project {
             .env("CHARTER_ROOT", &root)
             .env("HOME", self.at.join("home"))
             .env("PURLIS_CONFIG_HOME", self.at.join("home/config"))
-            .env("PURLIS_SKILL_STUDIO", "1")
             .env("NO_COLOR", "1")
             .env_remove("CLAUDE_CONFIG_DIR")
             .env_remove("CODEX_HOME")

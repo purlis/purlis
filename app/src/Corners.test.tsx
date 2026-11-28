@@ -59,7 +59,7 @@ const leftColumn = () =>
   document.querySelector(".activity-column[data-side='left']") as HTMLElement | null;
 
 describe("the left corner (#3144, R121–R123)", () => {
-  it("is a column at the frame's start, beside the rail: Chats, Explorer, Search, then Repos and Changes at its foot", () => {
+  it("is a column at the frame's start, beside the rail: Chats, Explorer, Search, Skills, then Repos and Changes at its foot", () => {
     render(<Window from={DEFAULT_ARRANGEMENT} />);
     const column = leftColumn();
     expect(column).not.toBeNull();
@@ -73,7 +73,7 @@ describe("the left corner (#3144, R121–R123)", () => {
     const names = [...(column as HTMLElement).querySelectorAll('[role="tab"]')].map((one) =>
       one.getAttribute("aria-label"),
     );
-    expect(names).toEqual(["Chats", "Explorer", "Search", "Repos", "Changes"]);
+    expect(names).toEqual(["Chats", "Explorer", "Search", "Skills", "Repos", "Changes"]);
     for (const item of (column as HTMLElement).querySelectorAll('[data-part="item"]'))
       expect(item).toHaveAttribute("data-variant", "bar");
     // A column, walked by the up and down arrows.
@@ -287,7 +287,7 @@ describe("the keyboard and the side put away (S4, S7, D-2917-18)", () => {
     expect(column).not.toBeNull();
     expect(
       [...column.querySelectorAll('[role="tab"]')].map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["Chats", "Explorer", "Search", "Repos", "Changes"]);
+    ).toEqual(["Chats", "Explorer", "Search", "Skills", "Repos", "Changes"]);
     // Away, no view of the side is open, so none of its icons is marked.
     expect(
       within(screen.getByRole("tablist", { name: "Navigation" })).queryAllByRole("tab", {

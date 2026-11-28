@@ -57,7 +57,6 @@ function core(
     asked.push({ cmd, args: given });
     if (cmd === "skill_studio")
       return {
-        on: true,
         workspace: null,
         persona: null,
         first: { starts: false, unmoved: null },
@@ -68,7 +67,6 @@ function core(
         clashes: [],
         skills,
       };
-    if (cmd === "skill_studio_on") return true;
     if (cmd === "skills_deleted") return deleted;
     if (cmd === "skill_drafts") return [];
     if (cmd === "skill_deletes_cut_short") return { settled: [], unsettled: [] };

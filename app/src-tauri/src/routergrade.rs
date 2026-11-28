@@ -19,7 +19,6 @@
 //!   crash, a fault or a quit before it ends leaves it to the project's next start to record as
 //!   interrupted.
 //!
-//! Behind the `skill-studio` flag until its finish line (#2786).
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -35,7 +34,6 @@ use purlis_core::skills::grades::{self, Spent};
 use purlis_core::skills::router::PromptReading;
 
 use crate::planes::{PlaneId, Planes};
-use crate::skillchange::flag_on;
 use crate::skillgrade::{
     GradeEnded, GradeEstimate, GradeLeftOut, GradeOutcome, GradePrice, GradeSpent, InChats, On,
     Running, RunningStep, ScoredTest, chats_on, held_to_its_end, not_kept, record_interrupted,
@@ -338,7 +336,6 @@ pub(crate) async fn router_grade_plan(
 ) -> Result<RouterGradePlan, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading what a router's grade runs", move || {
-        flag_on()?;
         plan_of(
             held.root(),
             &plane,
@@ -366,7 +363,6 @@ pub(crate) async fn router_grade_set_cap(
 ) -> Result<RouterGradePlan, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("setting a grade's cap", move || {
-        flag_on()?;
         let scope = scope(workspace, persona)?;
         set_cap(held.root(), tokens)?;
         plan_of(held.root(), &plane, &scope, profile, model)
@@ -403,7 +399,6 @@ pub(crate) async fn router_grade_start(
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("starting a router's grade", move || {
-        flag_on()?;
         let root = held.root().to_path_buf();
         let scope = scope(workspace, persona)?;
         let router = chosen(&root, &scope)?;
@@ -821,7 +816,6 @@ pub(crate) async fn router_grade_scorecard(
 ) -> Result<RouterGradeScorecard, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading a router's grade", move || {
-        flag_on()?;
         let root = held.root();
         let (graded, of) = router_grade_of(root, &scope(workspace, persona)?, &grade)?;
         Ok(RouterGradeScorecard::of(&graded, |chat| {
@@ -845,7 +839,6 @@ pub(crate) async fn router_grade_chat(
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading a router's grade's chat", move || {
-        flag_on()?;
         let root = held.root();
         let (_, of) = router_grade_of(root, &scope(workspace, persona)?, &grade)?;
         grades::kept::kept_of(root, &of, &grade, &chat).ok_or_else(|| not_kept("the router's"))

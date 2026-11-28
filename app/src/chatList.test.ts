@@ -100,7 +100,6 @@ function world(over: Partial<Now> = {}): { now: Now; offers: Catalogued; palette
       locked: null,
       locked_for: [{ session: 2, persona: "qa", why: "Policy forbids it." }],
     },
-    skillStudio: true,
     askable: (session) => session !== 6,
     restartable: (session) => session !== 6,
     linkable: () => true,
@@ -309,10 +308,6 @@ describe("a chat's one list (#4753)", () => {
     it("has no asker's row once that chat has closed, since there is nowhere to go", () => {
       const listed = world().now.listed?.filter((one) => one.session !== 1);
       expect(footed({ listed }).offers.has(FOOT_ROWS.from(5))).toBe(false);
-    });
-
-    it("has no Skills row with the Skill studio off, as it has no Use skill", () => {
-      expect(footed({ skillStudio: false }).offers.has(FOOT_ROWS.skills(5))).toBe(false);
     });
   });
 

@@ -18,8 +18,8 @@ use purlis_core::skills::verbs::drafts;
 
 use super::{
     Begin, ByGrader, DraftBegun, GradeArms, GradeGrader, GradeRow, RunningStep, SkillGradePlan,
-    SkillGradeStep, begin, chats_on, evals_can_run, flag_on, grader_picked, grader_takes,
-    graders_here, plan_by, plan_holds, running, set_cap, tests_said, ticked,
+    SkillGradeStep, begin, chats_on, evals_can_run, grader_picked, grader_takes, graders_here,
+    plan_by, plan_holds, running, set_cap, tests_said, ticked,
 };
 use crate::planes::{PlaneId, Planes};
 
@@ -128,7 +128,6 @@ pub(crate) async fn skill_draft_grade(
 ) -> Result<SkillDraftGrade, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading a draft's grade", move || {
-        flag_on()?;
         let one = drafts::one(held.root(), &draft)?;
         Ok(SkillDraftGrade::of(
             grades::draft::of(held.root(), &one),
@@ -179,7 +178,6 @@ pub(crate) async fn skill_draft_grade_plan(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("reading what a grade runs", move || {
-        flag_on()?;
         plan_of_draft(
             held.root(),
             &plane,
@@ -212,7 +210,6 @@ pub(crate) async fn skill_draft_grade_set_cap(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("setting a grade's cap", move || {
-        flag_on()?;
         set_cap(held.root(), tokens)?;
         plan_of_draft(
             held.root(),
@@ -246,7 +243,6 @@ pub(crate) async fn skill_draft_grade_start(
     let held = planes.held(&plane)?;
     let executor = app.state::<crate::views::Views>().executor();
     crate::off_the_window("starting a grade", move || {
-        flag_on()?;
         let one = drafts::one(held.root(), &draft)?;
         let on = chats_on(held.root(), profile.clone(), model.clone());
         let planned = grades::draft::planned(held.root(), &one, None, &ticked(&evals))?;

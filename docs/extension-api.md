@@ -6,9 +6,6 @@ each one exchanges, and how they may change. The reasons are in
 [ADR 0101](adr/0101-the-skill-studio-is-built-from-six-extension-capabilities-and-an-extension-that-declares-one-is-confined.md)
 and [ADR 0053](adr/0053-an-extension-is-granted-capabilities-one-at-a-time.md).
 
-The words are known only where the Skill studio is on, until the studio's finish line (#2786).
-Where it is off, a manifest that names one is refused like any unknown word.
-
 ## What versions 1 and 2 hold
 
 | Word | Since protocol | What purlis does for the extension |

@@ -5,10 +5,10 @@
 //!
 //! How a chat's skill set is worked out is `purlis-skills`' alone: which skills a chat gets, by
 //! which [`Route`] and from which [`Origin`], and why each left-out one is left out. This module
-//! hands that crate what purlis-core knows about a chat, where the chat is armed
-//! ([`for_chat`]) and where a briefed chat's `SessionStart` lists its skills ([`briefed`]), and
-//! it holds the `skill-studio` flag ([`studio_on`]). A harness adapter asks [`for_chat`] and
-//! turns the answer into its harness's argv, env and config; the route each harness takes is its
+//! hands that crate what purlis-core knows about a chat, where the chat is armed ([`for_chat`]) and
+//! where a briefed chat's `SessionStart` lists its skills ([`briefed`]), and it says whether the
+//! plane's skills reach a chat ([`reach_chats`]). A harness adapter asks [`for_chat`] and turns the
+//! answer into its harness's argv, env and config; the route each harness takes is its
 //! declaration's fact, [`crate::harness::Harness::skills`].
 
 use std::path::{Path, PathBuf};
@@ -98,8 +98,8 @@ pub const LISTED_ENV: &str = "PURLIS_SKILLS_DIR";
 /// The variable a briefed chat is started with when its set holds the plane's skills (ADR 0099):
 /// the set's folder purlis laid out for it ([`lay_out`]), and its `SessionStart` briefing then
 /// lists them with the built-in ones, each by the `SKILL.md` purlis wrote for it there (SK-8), so
-/// a briefed chat reads what every other route hands. Set only where the `skill-studio` flag let
-/// the plane's skills into the chat's set and their folder was laid out, so a briefing never reads
+/// a briefed chat reads what every other route hands. Set only where the plane's skills reached the
+/// chat's set ([`reach_chats`]) and their folder was laid out, so a briefing never reads
 /// the plane where arming did not.
 pub const PLANE_LISTED_ENV: &str = "PURLIS_SKILLS_PLANE";
 
@@ -159,7 +159,7 @@ pub fn budget_at(at: Option<PlaneSkills<'_>>, harness: Harness) -> Budget {
 /// The skill set of a chat on `harness` armed with `kit`, asked of [`purlis_skills::skill_set`].
 ///
 /// The built-in skills come from the bundle in `kit`, and the plane's from `kit.skills`, where
-/// the `skill-studio` flag let them in.
+/// they reach the chat ([`reach_chats`]).
 pub fn for_chat(kit: Kit<'_>, harness: Harness) -> SkillSet {
     let built_in = kit.plugin.and_then(in_bundle);
     routed(
@@ -671,8 +671,7 @@ fn started_at(pid: u32) -> Option<std::time::SystemTime> {
 /// **[`tidy`] of this user's sets' folders, said in the log**, on a thread of its own after
 /// `wait`, so nothing waits on it: what the app does as it starts and after a chat closes.
 ///
-/// A fenced test build tidies nothing outside its fence, as it reads no store there
-/// ([`studio_on_here`]).
+/// A fenced test build tidies nothing outside its fence, as it reads no store there.
 pub fn tidy_here_later(wait: std::time::Duration) {
     if let Some(sets) = sets_here() {
         tidy_later(sets, wait);
@@ -1020,7 +1019,7 @@ pub fn readable_by_a_briefed_chat(env: &dyn Fn(&str) -> Option<String>) -> Vec<S
 }
 
 /// **A running chat, as Use skill… asks for its skills** (SK-12, #2775): where it works, as whom,
-/// on which harness, and whether the `skill-studio` flag lets the plane's skills into its set.
+/// on which harness, and whether the plane's skills reach its set ([`reach_chats`]).
 #[derive(Debug, Clone, Copy)]
 pub struct Running<'a> {
     /// The plane's root.
@@ -1958,37 +1957,31 @@ pub fn share_here(plane: &Path, at: &Whose, name: &str) -> Result<Shared, String
 pub const PROJECT_SKILLS_FEATURE: &str = "project-skills";
 
 /// **Whether the project's skills reach the chats of the project at `plane`** (ADR 0099 as
-/// amended 2026-10-22, the dispatcher's ruling on #2784): where `studio`, the Skill studio's
-/// flag, is on, and on every machine once the project requires [`PROJECT_SKILLS_FEATURE`]. The
-/// flag shows the studio; the manifest says where the project's skills live. A project whose
-/// skills moved out of `.claude/skills` gets no copy of it in a clone, so a teammate with the
-/// flag off would otherwise start every chat without them.
-pub fn reach_chats(plane: &Path, studio: bool) -> bool {
-    studio || crate::compat::requires(plane, PROJECT_SKILLS_FEATURE)
+/// amended 2026-10-22, 2026-10-31 and 2026-11-04): where `said`, the word the chat's start took,
+/// says so, and on every machine once the project requires [`PROJECT_SKILLS_FEATURE`]. Since
+/// the Skill studio's flag went (#2786) every start of this build says so; only a runner's chat
+/// started by an older desktop that said not (#3084, #4344) can be told otherwise, and a project
+/// whose skills moved out of `.claude/skills` reaches it all the same, since its clones hold no
+/// copy of them.
+pub fn reach_chats(plane: &Path, said: bool) -> bool {
+    said || crate::compat::requires(plane, PROJECT_SKILLS_FEATURE)
 }
 
-/// [`reach_chats`], with this machine's flag ([`studio_on_here`]).
+/// [`reach_chats`], with the word this process's chat was started with ([`started_with`]).
 pub fn reach_chats_here(plane: &Path) -> bool {
-    reach_chats(plane, studio_on_here())
+    reach_chats(plane, started_with(&|name| std::env::var(name).ok()))
 }
 
-/// The flag the Skill studio's slices land behind until its finish line (#2762, SK-23), and is
-/// then removed. It hides nothing yet.
-pub const STUDIO_FLAG: &str = "skill-studio";
+/// **The variable that carries a start's word into the chat a runner composes** (#3084):
+/// `0` where its desktop said the plane's skills do not reach it, `1` where they do, so what
+/// the chat runs there (purlis's MCP server, its hooks) reads the word its arming took
+/// ([`crate::hoststart`]). Any other value, and none, is the word of every start of this build.
+pub const PLANE_SKILLS_ENV: &str = "PURLIS_PLANE_SKILLS";
 
-/// The variable that turns [`STUDIO_FLAG`] on (`1`) or off (`0`), over what this machine says.
-/// Any other value is not read.
-pub const STUDIO_ENV: &str = "PURLIS_SKILL_STUDIO";
-
-/// Whether [`STUDIO_FLAG`] is on: what this machine's store says
-/// ([`crate::machine::Flags::skill_studio`], off unless turned on, on every channel), and
-/// [`STUDIO_ENV`] decides over it.
-pub fn studio_on(flags: &crate::machine::Flags, env: &dyn Fn(&str) -> Option<String>) -> bool {
-    match crate::envvar::lookup(STUDIO_ENV, env).as_deref() {
-        Some("1") => true,
-        Some("0") => false,
-        _ => flags.skill_studio,
-    }
+/// The word a chat's start took, as [`PLANE_SKILLS_ENV`] in `env` carries it: not reached only
+/// where it says `0`.
+pub fn started_with(env: &dyn Fn(&str) -> Option<String>) -> bool {
+    crate::envvar::lookup(PLANE_SKILLS_ENV, env).as_deref() != Some("0")
 }
 
 /// **What the Skill studio and `purlis skill list` show** (SK-2): the skill set of a chat in the
@@ -2205,8 +2198,8 @@ pub fn copy_workspace_of(
 /// **The skill set of one chat, as purlis's MCP server's skill tools work it out** (SK-13): a
 /// chat in the plane at `plane`, at its root (`workspace` `None`) or in `workspace`, running as
 /// `persona`, its skills taking `route`, with the built-in skills from `built_in`. The plane's
-/// skills are in it: the tools are there only while the `skill-studio` flag lets the plane's
-/// skills into a chat ([`studio_on`]). Worked out at each call, as the chat's place is.
+/// skills are in it: the tools are there only where the plane's skills reach the chat
+/// ([`reach_chats_here`]). Worked out at each call, as the chat's place is.
 pub fn of_a_chat(
     built_in: Option<&Path>,
     plane: &Path,
@@ -4101,28 +4094,6 @@ pub fn studio_runs(plane: &Path, skill: Option<&str>, limit: usize) -> Vec<Studi
 pub fn built_in_here() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     crate::plugin_install::bundle_beside(&exe).and_then(|plugin| in_bundle(&plugin))
-}
-
-/// **Turns the Skill studio's flag on or off on this machine** (`flags.skill-studio` in
-/// `machine.json`), as Settings › You › Previews does. [`STUDIO_ENV`] still decides over it
-/// where it is set.
-pub fn set_studio_on(config_root: &Path, on: bool) -> Result<(), String> {
-    crate::machine::update(config_root, |store| store.flags.skill_studio = on)
-        .map(|_| ())
-        .map_err(|why| format!("purlis could not keep it, so nothing was changed: {why}"))
-}
-
-/// [`studio_on`] for this process: this machine's store, and this process's environment. Asked
-/// at every chat's start, so it never holds the fence: a fenced test build reads a store outside
-/// its fence as holding no flag, as [`crate::profilestore::listed_here`] does.
-pub fn studio_on_here() -> bool {
-    let flags = crate::machine::config_root_unheld()
-        .filter(|config| {
-            !crate::fence::FENCED || crate::fence::inside(config, &crate::fence::fence())
-        })
-        .map(|config| crate::machine::read(&config).store.flags)
-        .unwrap_or_default();
-    studio_on(&flags, &|name| std::env::var(name).ok())
 }
 
 #[cfg(test)]

@@ -16,7 +16,7 @@ import { studioSkill, writeSkill } from "../studio.js";
 
 /**
  * **A workspace's skills in the Skill studio** (SK-4, #2767), in the built app against the real
- * core, with the `skill-studio` flag on for the run (`wdio.conf.ts`).
+ * core.
  *
  * The spec writes three skills as a person would: a project skill granted to `alpha` in its
  * `<name>.toml`, a project skill granted to no workspace, and a skill of `alpha`'s own. It opens

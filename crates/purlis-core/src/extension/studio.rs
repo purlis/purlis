@@ -30,10 +30,9 @@
 //!   purlis can apply, the whole extension is refused at its read ([`refused_here`]), and where
 //!   the sandbox is missing at a question, nothing starts ([`Confined::start`]).
 //!
-//! The words are known only where the `skill-studio` flag is on
-//! ([`super::capability::Capability::known`]). Three are versions 1 and 2 of the public
-//! extension API, whose messages are `docs/extension-api.md` and the files of
-//! `tests/fixtures/extension-api/` (`v1.json` protocol 4, `v2.json` protocol 5); the others are
+//! Three of the words are versions 1 and 2 of the public extension API, whose messages are
+//! `docs/extension-api.md` and the files of `tests/fixtures/extension-api/` (`v1.json` protocol 4,
+//! `v2.json` protocol 5); the others are
 //! experimental ([`super::capability::Capability::VERSION_ONE`]).
 
 pub mod grading;

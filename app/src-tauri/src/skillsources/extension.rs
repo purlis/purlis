@@ -27,7 +27,7 @@ use super::{
     InstallReview, InstallSetReview, OfferedSkill, Reviewed, SkillRename, SourceBrowse,
     SourceCommit, UpdateReview, esc, update_shown,
 };
-use crate::skillchange::{SkillChanged, SkillGrant, SkillLevel, flag_on, heard_audited};
+use crate::skillchange::{SkillChanged, SkillGrant, SkillLevel, heard_audited};
 
 /// **An extension's skill source**, as the studio lists one: the extension's id, the name it
 /// gives itself, and how many skills are installed from it here.
@@ -173,7 +173,6 @@ pub(crate) async fn skill_extension_sources(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("reading the extensions' skill sources", move || {
-        flag_on()?;
         let (locked, _) = purlis_core::skills::source::lock::every(held.root());
         Ok(with_studio(&executor, held.root(), |studio| {
             studio
@@ -207,7 +206,6 @@ pub(crate) async fn skill_extension_source_browse(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("browsing the skill source", move || {
-        flag_on()?;
         let browse = studied(&executor, held.root(), |studio| {
             ext::browse(studio, held.root(), &id)
         })?;
@@ -253,7 +251,6 @@ pub(crate) async fn skill_extension_install_review(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("reviewing the install", move || {
-        flag_on()?;
         let root = held.root();
         let at = (&level).into();
         let (review, read) = studied(&executor, root, |studio| {
@@ -290,7 +287,6 @@ pub(crate) async fn skill_extension_install_set_review(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("reviewing the install", move || {
-        flag_on()?;
         let root = held.root();
         let at = (&level).into();
         let (set, read) = studied(&executor, root, |studio| {
@@ -331,7 +327,6 @@ pub(crate) async fn skill_extension_install(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("installing the skill", move || {
-        flag_on()?;
         let root = held.root();
         still_a_source(&executor, root, &id)?;
         let what = For::Install {
@@ -412,7 +407,6 @@ pub(crate) async fn skill_extension_update_review(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("reviewing the update", move || {
-        flag_on()?;
         let root = held.root();
         let at = (&level).into();
         let (update, read) = studied(&executor, root, |studio| {
@@ -449,7 +443,6 @@ pub(crate) async fn skill_extension_update(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("updating the skill", move || {
-        flag_on()?;
         let root = held.root();
         let at: purlis_core::skills::verbs::Level = (&level).into();
         let what = For::Update {

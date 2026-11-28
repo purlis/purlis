@@ -57,7 +57,6 @@ export function need(id: string, over: Partial<NeedsYou> = {}): NeedsYou {
 /** A studio answer holding `skills`, and each program's own. */
 export function studio(skills: StudioSkill[], over: Partial<Studio> = {}): Studio {
   return {
-    on: true,
     workspace: null,
     persona: null,
     workspaces: ["ops"],

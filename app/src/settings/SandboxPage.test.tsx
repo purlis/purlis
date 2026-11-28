@@ -245,6 +245,10 @@ function core({
           return null;
         case "sandbox_state":
           return now.sandbox;
+        case "skill_studio":
+          // The Skills groups are on every machine since the studio's flag went (#2786); their
+          // budget reads the studio, which this core has none of.
+          throw "no studio in this test";
         case "allow_persona_hosts":
           allowed.push(given);
           return sandbox;

@@ -5,7 +5,6 @@ import { memo } from "react";
 import { Sparkles } from "lucide-react";
 import { counted } from "./dispatches";
 import { tokensShort, useOpenRunOf } from "./skillRuns";
-import { useSkillStudioOn } from "./skillStudio";
 import { Button } from "./ui/button/Button";
 import type { OpenRun } from "./bindings";
 
@@ -19,7 +18,7 @@ import type { OpenRun } from "./bindings";
  * it opens the Skill studio at that skill's Runs, with the run marked (#3682). The skill is the one the core counts the run of, by its
  * own name (`secrets` for opencode's `purlis-secrets`, #3385): the window reads no name itself.
  *
- * Nothing while no run is open, and nothing while the Skill studio is not on.
+ * Nothing while no run is open.
  */
 export const SkillRunChip = memo(function SkillRunChip({
   session,
@@ -31,9 +30,8 @@ export const SkillRunChip = memo(function SkillRunChip({
    *  workspace's (its `copy_workspace`, #6083). */
   onOpen: (run: OpenRun, session: number) => void;
 }) {
-  const on = useSkillStudioOn();
   const run = useOpenRunOf(session);
-  if (!on || run === undefined) return null;
+  if (run === undefined) return null;
   const calls = counted(run.tool_calls, "tool call", "tool calls");
   const tokens = run.tokens === null ? undefined : `${tokensShort(run.tokens)} tokens`;
   const sofar = tokens === undefined ? calls : `${calls} and ${tokens}`;

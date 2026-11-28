@@ -73,7 +73,6 @@ const CHAT = {
 };
 
 const SKILLS: ChatSkills = {
-  on: true,
   known: true,
   program: [],
   plugins_off: [],
@@ -99,7 +98,7 @@ const SKILLS: ChatSkills = {
   missing: null,
 };
 
-/** The core: one chat in alpha, the Skill studio on. Who each read of the studio was for, and
+/** The core: one chat in alpha. Who each read of the studio was for, and
  *  how many times a chat's set was read. */
 function core() {
   const studioFor: (string | null)[] = [];
@@ -108,7 +107,6 @@ function core() {
     (cmd, args) => {
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [CHAT];
-      if (cmd === "skill_studio_on") return true;
       if (cmd === "chat_skills") {
         chatSets.read += 1;
         return SKILLS;

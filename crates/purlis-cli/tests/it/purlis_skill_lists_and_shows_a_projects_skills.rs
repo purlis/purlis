@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `purlis skill list | show` on a temporary project (SK-2, #2765): the project's skills with
-//! their level, and every one left out with why, behind the `skill-studio` flag.
+//! their level, and every one left out with why.
 
 use crate::support;
 
@@ -36,7 +36,7 @@ impl Project {
         self.at.join("plane")
     }
 
-    fn run(&self, args: &[&str], studio: &str) -> Output {
+    fn run(&self, args: &[&str]) -> Output {
         let root = self.root();
         support::purlis()
             .args(args)
@@ -44,7 +44,6 @@ impl Project {
             .env("CHARTER_ROOT", &root)
             .env("HOME", self.at.join("home"))
             .env("PURLIS_CONFIG_HOME", self.at.join("home/config"))
-            .env("PURLIS_SKILL_STUDIO", studio)
             .env("NO_COLOR", "1")
             .output()
             .unwrap()
@@ -73,7 +72,7 @@ fn stderr(out: &Output) -> String {
 fn skill_list_shows_each_project_skill_with_its_level_at_the_plane_root() {
     let project = Project::new();
 
-    let out = project.run(&["skill", "list"], "1");
+    let out = project.run(&["skill", "list"]);
 
     assert!(out.status.success(), "{}", stderr(&out));
     let text = stdout(&out);
@@ -97,7 +96,7 @@ fn skill_list_shows_each_project_skill_with_its_level_at_the_plane_root() {
 fn skill_list_for_a_workspace_says_a_project_skill_was_not_granted_there() {
     let project = Project::new();
 
-    let out = project.run(&["skill", "list", "-w", "alpha", "--json"], "1");
+    let out = project.run(&["skill", "list", "-w", "alpha", "--json"]);
 
     assert!(out.status.success(), "{}", stderr(&out));
     let doc: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
@@ -120,7 +119,7 @@ fn skill_list_for_a_workspace_says_a_project_skill_was_not_granted_there() {
 fn skill_show_prints_one_skill_and_exits_2_for_a_name_no_skill_has() {
     let project = Project::new();
 
-    let out = project.run(&["skill", "show", "deploy"], "1");
+    let out = project.run(&["skill", "show", "deploy"]);
     assert!(out.status.success(), "{}", stderr(&out));
     let text = stdout(&out);
     assert!(text.starts_with("deploy\n"), "{text}");
@@ -129,7 +128,7 @@ fn skill_show_prints_one_skill_and_exits_2_for_a_name_no_skill_has() {
     assert!(text.contains("description: Does deploy."), "{text}");
     assert!(text.contains("in this chat's skills: on"), "{text}");
 
-    let missing = project.run(&["skill", "show", "nothing"], "1");
+    let missing = project.run(&["skill", "show", "nothing"]);
     assert_eq!(missing.status.code(), Some(2));
     assert!(stderr(&missing).contains("purlis skill list"));
 }
@@ -146,7 +145,7 @@ fn skill_show_shows_every_copy_of_a_name_and_why_the_hidden_one_is_left_out() {
     )
     .unwrap();
 
-    let out = project.run(&["skill", "show", "deploy", "--json"], "1");
+    let out = project.run(&["skill", "show", "deploy", "--json"]);
 
     assert!(out.status.success(), "{}", stderr(&out));
     let doc: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
@@ -175,25 +174,17 @@ fn skill_show_shows_every_copy_of_a_name_and_why_the_hidden_one_is_left_out() {
     );
 }
 
+/// #2786: the Skill studio has no switch, so `purlis skill list` lists on a machine that never
+/// turned anything on, and asks nobody to.
 #[test]
-fn skill_list_says_the_studio_is_not_on_while_its_flag_is_off_and_writes_nothing() {
+fn skill_list_lists_with_nothing_turned_on_on_this_machine() {
     let project = Project::new();
 
-    let out = project.run(&["skill", "list"], "0");
+    let out = project.run(&["skill", "list"]);
 
-    assert_eq!(out.status.code(), Some(1));
-    assert!(
-        stderr(&out).contains("Settings › You › Previews"),
-        "{}",
-        stderr(&out)
-    );
-    assert!(
-        stderr(&out).contains("PURLIS_SKILL_STUDIO=1"),
-        "{}",
-        stderr(&out)
-    );
-    assert!(stdout(&out).is_empty());
-    assert!(!project.root().join(".claude").exists());
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(stdout(&out).contains("deploy"), "{}", stdout(&out));
+    assert!(!stderr(&out).contains("Previews"), "{}", stderr(&out));
 }
 
 /// SK-47: the project's own skills table pads a name as it is shown. The padding escapes it, so
@@ -210,7 +201,7 @@ fn a_project_skill_named_with_bidi_and_zero_width_characters_is_listed_escaped_a
     )
     .unwrap();
 
-    let out = project.run(&["skill", "list"], "1");
+    let out = project.run(&["skill", "list"]);
 
     assert!(out.status.success(), "{}", stderr(&out));
     let text = stdout(&out);

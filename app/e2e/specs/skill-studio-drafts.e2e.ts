@@ -16,8 +16,7 @@ import { projectInFront, runningIn } from "../running.js";
 import { theDefaultProfileApproved } from "../started.js";
 
 /**
- * **Draft skills in the Skill studio** (SK-9, #2772), in the built app against the real core, with
- * the `skill-studio` flag on for the run (`wdio.conf.ts`).
+ * **Draft skills in the Skill studio** (SK-9, #2772), in the built app against the real core.
  *
  * A chat's write to a skill's files is kept as a draft in this machine's app state of the project
  * (`<data>/app-state/<clone key>/skill-drafts/<id>/`, `docs/plane-format.md`); how a chat's write gets there is the core's seam

@@ -3,7 +3,7 @@
 
 import { memo, startTransition, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { afterPaint } from "./projectShown";
-import { MessageSquarePlus, Plus, Search, Sparkle, Sparkles } from "lucide-react";
+import { MessageSquarePlus, Plus, Search, Sparkle } from "lucide-react";
 import {
   commands,
   type DeletedRename,
@@ -499,10 +499,9 @@ export function SkillStudioTab({
     [asRead, where],
   );
   const refused = read?.key === key ? read.refused : undefined;
-  const on = studio?.on === true;
-  // Read once the studio has said it is on: a scope picked later reads its skills, not these.
+  // Read once the studio has first been read: a scope picked later reads its skills, not these.
   const [opened, setOpened] = useState(false);
-  if (on && !opened) setOpened(true);
+  if (studio !== undefined && !opened) setOpened(true);
   // The Routing page reads a chat's latest prompt from the studio's answer (#4445), which lists
   // only this scope's chats, so a chat it does not list reads nothing. A read refused leaves no
   // list, and listening does not stop for it.
@@ -514,7 +513,7 @@ export function SkillStudioTab({
   const drafts = draftsRead ?? [];
   // A start the Skills view asked this studio to open on (#3266): New skill…'s dialog (#3684).
   // Make my own copy, asked from the Skills view's folded built-in skills (#3693).
-  useStudioStart(tab, on, (start) =>
+  useStudioStart(tab, studio !== undefined, (start) =>
     edits.leave(() => {
       if (start === "copy") setCopying({});
       else setDoing({ what: "new" });
@@ -618,16 +617,6 @@ export function SkillStudioTab({
     // The history's steps are the tab's own: `at` and the studio read say all it acts on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graded, at, studio]);
-
-  if (studio !== undefined && !studio.on)
-    return (
-      <EmptyState
-        headline="The Skill studio is not on yet"
-        body="Turn it on in Settings › You › Previews to try it while it is being built."
-        mark={Sparkles}
-        testid="skill-studio-off"
-      />
-    );
 
   /** Goes to `place`, a step of the tab's history; a change in progress is left, as is the item
    *  of Needs you chosen. */

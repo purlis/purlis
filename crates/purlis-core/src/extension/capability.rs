@@ -81,9 +81,8 @@ pub enum Capability {
     /// ([`super::artifacts`]). purlis asks its program nothing about them: protocol 8 is the
     /// version that declares them. Its shape is `contributes.artifacts`.
     Artifacts,
-    /// **The six studio capabilities** (ADR 0101), known only where the `skill-studio` flag is
-    /// on ([`crate::skills::STUDIO_FLAG`]). Three are version 1 of the public extension API and
-    /// the rest are experimental ([`Self::VERSION_ONE`]). An extension that declares any of
+    /// **The six studio capabilities** (ADR 0101). Three are version 1 of the public extension API
+    /// and the rest are experimental ([`Self::VERSION_ONE`]). An extension that declares any of
     /// them runs confined ([`super::studio`]). Each declares its shape under its own word.
     ///
     /// A skill source: purlis asks it what skills it has, and for one skill's files at a
@@ -254,15 +253,9 @@ impl Capability {
         self.spelled().0
     }
 
-    /// Every capability this build of charter knows on this machine, in the order a prompt lists
-    /// them: the studio capabilities only where the `skill-studio` flag is on here
-    /// ([`crate::skills::studio_on_here`], ADR 0101 §7).
+    /// Every capability this build of charter knows, in the order a prompt lists them: the studio
+    /// capabilities on every machine since the Skill studio's flag went (#2786, ADR 0101 §7).
     pub fn known() -> Vec<Self> {
-        Self::known_where(crate::skills::studio_on_here())
-    }
-
-    /// [`Self::known`], where `studio` says whether the `skill-studio` flag is on.
-    pub fn known_where(studio: bool) -> Vec<Self> {
         let mut known = Vec::new();
         if crate::fence::FENCED {
             known.push(Self::Probe);
@@ -280,9 +273,7 @@ impl Capability {
             Self::Queries,
             Self::Artifacts,
         ]);
-        if studio {
-            known.extend(Self::STUDIO);
-        }
+        known.extend(Self::STUDIO);
         known
     }
 

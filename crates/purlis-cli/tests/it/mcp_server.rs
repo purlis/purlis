@@ -229,6 +229,11 @@ fn a_harness_lists_charter_s_tools() {
             "browser_save_download",
             "browser_upload",
             "theme_preview",
+            // The skill tools (SK-13): in every chat since the Skill studio's flag went (#2786).
+            "skill_list",
+            "skill_runs",
+            "skill_find",
+            "skill_load",
             // A chat proposes a pin, which only the person pins, added on purpose (#5963).
             "artifact_propose_pin",
             // The MCP twins of the read-only `purlis artifact` verbs, added on purpose (#5978's
@@ -245,8 +250,7 @@ const GOOSE: &str = "name = \"goose\"\ntitle = \"Goose\"\nprogram = \"goose\"\n\
                      [terminal]\nready_to_type = \"raw-and-quiet\"\n\n[levels]\n\n\
                      [capabilities]\nmcp_servers = \"yes\"\n";
 
-/// A project with one skill at its root, `deploy`, and the Skill studio's flag on for its
-/// server, the harness named `harness`.
+/// A project with one skill at its root, `deploy`, and its server, the harness named `harness`.
 fn with_a_skill(harness: &str) -> (tempfile::TempDir, Server) {
     let p = project();
     std::fs::write(p.path().join(purlis_core::plane::MANIFEST), "").expect("manifest");
@@ -264,16 +268,13 @@ fn with_a_skill(harness: &str) -> (tempfile::TempDir, Server) {
     let server = Server::start_with(
         p.path(),
         "alpha",
-        &[
-            ("PURLIS_SKILL_STUDIO", "1".as_ref()),
-            (purlis_core::hookwire::HARNESS_ENV, harness.as_ref()),
-        ],
+        &[(purlis_core::hookwire::HARNESS_ENV, harness.as_ref())],
     );
     (p, server)
 }
 
 #[test]
-fn with_the_studio_on_a_harness_with_no_skill_format_is_told_its_skills_are_over_mcp() {
+fn a_harness_with_no_skill_format_is_told_its_skills_are_over_mcp() {
     // SK-13: the fallback route's one line, in what the server tells the harness at its start.
     let (p, mut server) = with_a_skill("goose");
     let hello = server.initialize(false);
@@ -357,10 +358,16 @@ fn a_harness_with_a_route_of_its_own_is_told_what_to_do_with_a_skill_it_does_not
     );
 }
 
+/// #3084, #4344: a chat a runner started for a desktop that said the plane's skills do not reach
+/// it, in a project that has not moved them, has no skill tool.
 #[test]
-fn with_the_studio_off_there_is_no_skill_tool() {
+fn a_chat_whose_start_said_its_plane_skills_do_not_reach_it_has_no_skill_tool() {
     let p = project();
-    let mut server = Server::start(p.path(), "alpha");
+    let mut server = Server::start_with(
+        p.path(),
+        "alpha",
+        &[(purlis_core::skills::PLANE_SKILLS_ENV, "0".as_ref())],
+    );
     server.initialize(false);
     let answer = server.request(
         "tools/call",

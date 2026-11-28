@@ -3,7 +3,7 @@
 
 //! `purlis skill revert` to a version whose frontmatter would widen a chat (SK-19, #2782): it
 //! says so in the window's own sentence (`widening_said`), and asks before reverting, unless
-//! `--yes` is given. A "no" leaves the skill as it was. Behind the `skill-studio` flag. The
+//! `--yes` is given. A "no" leaves the skill as it was. The
 //! project's git directory sits beside it, so no `.git` folder is made inside the fixture.
 
 use crate::support;
@@ -89,7 +89,6 @@ impl Project {
             .env("CHARTER_ROOT", &root)
             .env("HOME", self.at.join("home"))
             .env("PURLIS_CONFIG_HOME", self.at.join("home/config"))
-            .env("PURLIS_SKILL_STUDIO", "1")
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("NO_COLOR", "1")

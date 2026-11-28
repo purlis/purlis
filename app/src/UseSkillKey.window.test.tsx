@@ -59,7 +59,6 @@ const CHAT = {
 };
 
 const SKILLS: ChatSkills = {
-  on: true,
   known: true,
   program: [],
   plugins_off: [],
@@ -85,7 +84,7 @@ const SKILLS: ChatSkills = {
   missing: null,
 };
 
-/** The core: one chat in alpha, the Skill studio on. What the window asked, by command. */
+/** The core: one chat in alpha. What the window asked, by command. */
 function core() {
   const asked: string[] = [];
   mockIPC(
@@ -95,7 +94,6 @@ function core() {
       if (cmd === "opened_chats") return [CHAT];
       // The chat's tab, as the stored layout keeps it (#4758).
       if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
-      if (cmd === "skill_studio_on") return true;
       if (cmd === "chat_skills") return SKILLS;
       if (cmd === "plane_sidebar")
         return {
@@ -129,7 +127,7 @@ describe("Use skill…'s key (#3954)", () => {
     await waitFor(() =>
       expect(within(stripNamed("Tabs")).queryAllByRole("tab").length).toBeGreaterThan(0),
     );
-    // The row is there once the core said the studio is on.
+    // The window settles before the key is pressed.
     await act(async () => {
       await new Promise((settle) => setTimeout(settle, 0));
     });

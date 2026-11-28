@@ -80,7 +80,6 @@ const SKILL: ChatSkill = {
 };
 
 const SKILLS: ChatSkills = {
-  on: true,
   known: true,
   program: [],
   plugins_off: [],
@@ -108,7 +107,7 @@ const RUNNING: Moved = {
 };
 const WAITING: Moved = { ...RUNNING, state: "waiting", moved_at: 2, sequence: 2 };
 
-/** The core: chat 4 owed a restart, which starts it again as session 9; the studio on. */
+/** The core: chat 4 owed a restart, which starts it again as session 9. */
 /** What the core refuses a pick with for a session no longer among its open chats (#6196). */
 const NOT_RUNNING =
   "This chat isn't running now, so nothing was typed. Pick the skill again in the chat's tab.";
@@ -123,7 +122,6 @@ function core(held?: Promise<void>) {
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [CHAT];
       if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
-      if (cmd === "skill_studio_on") return true;
       if (cmd === "chat_skills") return SKILLS;
       if (cmd === "plane_sidebar")
         return {

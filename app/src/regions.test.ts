@@ -34,7 +34,6 @@ import {
   tabsOf,
   type Arrangement,
 } from "./regions";
-import { previewsDrawn, type ViewId } from "./sideViews";
 import { setYourEditor } from "./yourEditor";
 import {
   aboutThisMachine,
@@ -931,57 +930,25 @@ describe("the open view of a side (#1673)", () => {
   });
 });
 
-describe("the Skills view, behind the Skill studio's preview (#3266)", () => {
-  const navigation = navigationOf;
-  const ON: readonly ViewId[] = ["skills"];
-
-  it("sits under Search on the left's bar only while the preview is on", () => {
-    expect(tabsOf(DEFAULT_ARRANGEMENT, "navigation", [])).toEqual(["chats", "explorer", "search"]);
-    expect(tabsOf(DEFAULT_ARRANGEMENT, "navigation", ON)).toEqual([
+describe("the Skills view, one of the left side's own (#3266, #2786)", () => {
+  it("sits under Search on the left's bar, and never on the right's", () => {
+    expect(tabsOf(DEFAULT_ARRANGEMENT, "navigation", [])).toEqual([
       "chats",
       "explorer",
       "search",
       "skills",
     ]);
-    // Never one of the right side's: what is present there is an extension's panel alone.
-    expect(tabsOf(DEFAULT_ARRANGEMENT, "aside", ON)).not.toContain("skills");
+    expect(tabsOf(DEFAULT_ARRANGEMENT, "aside", [])).not.toContain("skills");
   });
 
-  it("falls back to Chats while the preview is off, and comes back when it is on again", () => {
+  it("is what the side opens on once it is picked", () => {
     const { result } = renderHook(() => useArrangement("/one"));
-    act(() => result.current.pick("skills", ON));
-    const picked = navigation(result.current.arrangement);
-    expect(openView(picked, ON)).toBe("skills");
-
-    // Off: the side opens on Chats, and the pick is kept rather than written over.
-    expect(openView(picked, [])).toBe("chats");
-    expect(picked.view).toBe("skills");
-    // On again: the pick is back.
-    expect(openView(picked, ON)).toBe("skills");
+    act(() => result.current.pick("skills"));
+    expect(openView(navigationOf(result.current.arrangement))).toBe("skills");
   });
 
-  it("holds a side left on it until the window has heard whether the preview is on (#3308)", () => {
-    const { result } = renderHook(() => useArrangement("/one"));
-    act(() => result.current.pick("skills", ON));
-    const picked = navigation(result.current.arrangement);
-    const views = result.current.arrangement.map((one) => one.view);
-    // Not yet heard: the side stays on Skills, not Chats for a moment.
-    expect(openView(picked, previewsDrawn(undefined, views))).toBe("skills");
-    // A window left on Chats shows no Skills icon for a moment where the preview may be off.
-    expect(
-      previewsDrawn(
-        undefined,
-        DEFAULT_ARRANGEMENT.map((one) => one.view),
-      ),
-    ).toEqual([]);
-    // Heard: on keeps it, off falls back to Chats.
-    expect(openView(picked, previewsDrawn(true, views))).toBe("skills");
-    expect(openView(picked, previewsDrawn(false, views))).toBe("chats");
-  });
-
-  it("is named for the palette only while it is drawn", () => {
-    expect(placesOf(DEFAULT_ARRANGEMENT, []).map((one) => one.view)).not.toContain("skills");
-    expect(placesOf(DEFAULT_ARRANGEMENT, [], ON)).toContainEqual(
+  it("is named for the palette", () => {
+    expect(placesOf(DEFAULT_ARRANGEMENT, [])).toContainEqual(
       expect.objectContaining({ view: "skills", name: "Skills", region: "navigation" }),
     );
   });

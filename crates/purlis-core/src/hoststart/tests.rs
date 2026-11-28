@@ -181,7 +181,7 @@ fn a_start_with_no_data_folder_for_its_long_settings_is_refused() {
 
 /// #4344: a project that has not moved keeps its desktop's word, since its chats read
 /// `.claude/skills` themselves, and a start that says nothing takes this machine's own reading,
-/// which is what the flag's removal (#2786) turns on.
+/// which the flag's removal (#2786) turned on.
 #[test]
 fn an_unmoved_project_keeps_its_desktops_word_and_a_silent_start_reads_this_machine() {
     let tmp = tempfile::tempdir().unwrap();
@@ -205,11 +205,14 @@ fn an_unmoved_project_keeps_its_desktops_word_and_a_silent_start_reads_this_mach
     };
     assert!(!reach(Some(false)));
     assert!(reach(Some(true)));
-    assert_eq!(reach(None), crate::skills::reach_chats_here(&root));
+    assert!(
+        reach(None),
+        "a start that says nothing: this machine's reading, which since #2786 reaches it"
+    );
 }
 
 /// #4344: what a chat runs on the runner reads the word its arming took, so a moved project's chat
-/// is not told the studio is off while it holds the project's skills.
+/// is not told the plane's skills do not reach it while it holds them.
 #[test]
 fn a_moved_projects_chat_on_a_runner_is_started_with_the_word_its_arming_took() {
     let tmp = tempfile::tempdir().unwrap();
@@ -226,7 +229,7 @@ fn a_moved_projects_chat_on_a_runner_is_started_with_the_word_its_arming_took() 
             purlis_session_protocol::session::ProgramKind::Harness,
         )
     };
-    let said = studio_env_of(&Starting {
+    let said = plane_skills_env_of(&Starting {
         root: &root,
         number: 1,
         start: &start,
@@ -236,19 +239,19 @@ fn a_moved_projects_chat_on_a_runner_is_started_with_the_word_its_arming_took() 
     });
     assert_eq!(
         said,
-        Some((crate::skills::STUDIO_ENV.to_owned(), "1".to_owned()))
+        Some((crate::skills::PLANE_SKILLS_ENV.to_owned(), "1".to_owned()))
     );
 }
 
-/// SK-20b (#3084): a runner arms a chat with the plane's skills by its desktop's reading of the
-/// Skill studio's flag, where the start says it, never by its own machine's, which has nobody to
-/// turn it on, and a project that requires its skills gets them whatever it said (#4344). Only a
-/// link's start says so. Seen red: the runner read its own machine's alone.
+/// SK-20b (#3084): a runner arms a chat with the plane's skills by its desktop's word, where the
+/// start says it, never by its own machine's, and a project that requires its skills gets them
+/// whatever it said (#4344). Only a link's start says so. Seen red: the runner read its own
+/// machine's alone.
 #[test]
 fn only_a_links_start_says_whether_its_desktop_reaches_the_chat_with_the_planes_skills() {
     let tmp = tempfile::tempdir().unwrap();
     let root = plane_in(&tmp);
-    // The project requires its skills, so this machine's own reading is on, whatever its flag.
+    // The project requires its skills, so this machine's own reading is that they reach it.
     std::fs::write(
         root.join(crate::plane::MANIFEST),
         "requires = [{ feature = \"project-skills\" }]\n",
@@ -286,10 +289,10 @@ fn only_a_links_start_says_whether_its_desktop_reaches_the_chat_with_the_planes_
     }
 }
 
-/// #3084: what the chat runs on the runner (purlis's MCP server among them) reads the flag its
-/// arming took, its desktop's, from the variable that decides it there.
+/// #3084: what the chat runs on the runner (purlis's MCP server among them) reads the word its
+/// arming took, its desktop's, from the variable that carries it there.
 #[test]
-fn a_chat_its_desktop_said_the_flag_for_is_started_with_that_word() {
+fn a_chat_its_desktop_said_the_word_for_is_started_with_that_word() {
     let tmp = tempfile::tempdir().unwrap();
     let root = plane_in(&tmp);
     let env = |by: &str, said: Option<bool>| {
@@ -300,7 +303,7 @@ fn a_chat_its_desktop_said_the_flag_for_is_started_with_that_word() {
                 purlis_session_protocol::session::ProgramKind::Harness,
             )
         };
-        studio_env_of(&Starting {
+        plane_skills_env_of(&Starting {
             root: &root,
             number: 1,
             start: &start,
@@ -309,7 +312,7 @@ fn a_chat_its_desktop_said_the_flag_for_is_started_with_that_word() {
             started_by: by,
         })
     };
-    let word = |on: &str| Some((crate::skills::STUDIO_ENV.to_owned(), on.to_owned()));
+    let word = |on: &str| Some((crate::skills::PLANE_SKILLS_ENV.to_owned(), on.to_owned()));
     assert_eq!(env("remote-link", Some(true)), word("1"));
     assert_eq!(env("remote-link", Some(false)), word("0"));
     assert_eq!(env("remote-link", None), None);

@@ -9,7 +9,6 @@ import { emit } from "@tauri-apps/api/event";
 import { IN_ITS_CHAT, answerTaken, answerThrough, asksMoved, notSnoozed, useAsks } from "./asks";
 import type { Shown } from "./bindings";
 import { OPEN_BROWSER_ASK, type OpenBrowserAsk } from "./browserNeedsYou";
-import { OPEN_PROPOSAL_ASK } from "./proposedChangeOpen";
 import { OPEN_POOL_SETUP_ASK } from "./poolSetupAsked";
 import { REVIEW_PIN_ASK } from "./proposedPinOpen";
 import { REMOVE_WORKSPACE_ASK } from "./removeWorkspaceAsk";
@@ -180,19 +179,6 @@ const POOL_SETUP_READY: Shown = {
   source: "pool-setup",
   chain: ["purlis"],
   answer: { via: "pool-setup" },
-};
-
-const OLD_PLUGINS: Shown = {
-  session: 0,
-  ask: "old-harness-plugins",
-  says: "purlis no longer turns other harnesses' plugins on or off per project.",
-  options: [
-    { id: "remove", label: "Remove", allows: false },
-    { id: "dismiss", label: "Dismiss", allows: false },
-  ],
-  source: "old-harness-plugins",
-  chain: ["purlis"],
-  answer: { via: "old-harness-plugins" },
 };
 
 const BROWSER: Shown = {
@@ -461,34 +447,6 @@ describe("answering through the path an ask names", () => {
     expect(calls.map((one) => one.cmd)).toEqual([
       "pool_setup_stop_waiting",
       "pool_setup_stop_waiting",
-    ]);
-  });
-
-  it("removes the old harness plugin keys by opening purlis's proposed change, and puts it away by Dismiss (#3467)", async () => {
-    const calls = sent({
-      remove_old_harness_plugins: [{ id: 4, file: "charter.toml" }],
-      dismiss_old_harness_plugins: null,
-    });
-    const opened: unknown[] = [];
-    const heard = (event: Event) => opened.push((event as CustomEvent).detail);
-    window.addEventListener(OPEN_PROPOSAL_ASK, heard);
-    try {
-      expect(await answerTaken(PLANE, OLD_PLUGINS, "remove")).toEqual({
-        refused: undefined,
-        live: false,
-        opened: true,
-      });
-      expect(opened).toEqual([{ plane: PLANE, id: 4, path: "charter.toml" }]);
-      expect(await answerTaken(PLANE, OLD_PLUGINS, "dismiss")).toEqual({
-        refused: undefined,
-        live: false,
-      });
-    } finally {
-      window.removeEventListener(OPEN_PROPOSAL_ASK, heard);
-    }
-    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
-      ["remove_old_harness_plugins", { plane: PLANE }],
-      ["dismiss_old_harness_plugins", { plane: PLANE }],
     ]);
   });
 

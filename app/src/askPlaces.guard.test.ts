@@ -46,7 +46,6 @@ const PLACES = {
   "task-question": { at: "its-own", how: "the task's question band on its pane" },
   "sign-in": { at: "no-chat" },
   "sandbox-only": { at: "no-chat" },
-  "old-harness-plugins": { at: "no-chat" },
   signing: { at: "no-chat" },
   "pool-setup": { at: "no-chat" },
   browser: { at: "pane" },

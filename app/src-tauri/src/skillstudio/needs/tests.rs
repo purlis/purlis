@@ -26,7 +26,7 @@ fn one_skill() -> (tempfile::TempDir, Studio) {
         "deploy",
         "---\nname: deploy\ndescription: Deploys the app to staging, then to production.\n---\n",
     );
-    let studio = studio(tmp.path(), None, true, None, None, &no_harness());
+    let studio = studio(tmp.path(), None, None, None, &no_harness());
     (tmp, studio)
 }
 
@@ -187,7 +187,7 @@ fn a_lint_of_the_planes_own_skill_is_a_problem_in_a_skill_that_opens_its_text() 
          1. Build it.\n2. Check it.\n3. Tag it with scripts/tag.sh.\n",
     );
 
-    let studio = studio(tmp.path(), None, true, None, None, &no_harness());
+    let studio = studio(tmp.path(), None, None, None, &no_harness());
 
     let [one] = studio.needs.as_slice() else {
         panic!("one item: {:?}", studio.needs);
@@ -222,7 +222,7 @@ fn a_skill_purlis_hands_to_no_chat_for_its_text_is_a_problem_in_a_skill() {
         "---\nname: respelled\ndescription: Widens the chat it runs in.\nallowedTools: Bash\n---\n",
     );
 
-    let studio = studio(tmp.path(), None, true, None, None, &no_harness());
+    let studio = studio(tmp.path(), None, None, None, &no_harness());
 
     assert!(!studio.skills[0].on, "{:?}", studio.skills[0]);
     let [one] = studio.needs.as_slice() else {
@@ -287,7 +287,7 @@ fn skills_only_some_programs_read_are_a_tidy_up_that_moves_them() {
         "---\nname: notify\ndescription: Tells the team what shipped.\n---\n",
     );
 
-    let studio = studio(tmp.path(), None, true, None, None, &no_harness());
+    let studio = studio(tmp.path(), None, None, None, &no_harness());
 
     assert_eq!(
         kinds(&studio.needs),
@@ -377,7 +377,7 @@ fn a_summary_lines_count_reads_less_and_counts_what_the_page_holds() {
         "notify",
         "---\nname: notify\ndescription: Tells the team what shipped.\n---\n",
     );
-    let mut page = studio(tmp.path(), None, true, None, None, &no_harness());
+    let mut page = studio(tmp.path(), None, None, None, &no_harness());
     crate::skillstudio::with_the_projects_needs(&mut page, tmp.path(), &[]);
 
     let counted = crate::skillstudio::needing(tmp.path(), None, &[], None, None, &no_harness());
@@ -430,7 +430,7 @@ fn an_extensions_lint_is_a_problem_in_a_skill_counted_alike_on_the_page_and_a_su
     let lint = HouseStyle { of: "deploy" };
     let more: [&dyn purlis_core::skills::SkillLint; 1] = [&lint];
     let mut page =
-        crate::skillstudio::studio_linted(tmp.path(), None, true, None, None, &no_harness(), &more);
+        crate::skillstudio::studio_linted(tmp.path(), None, None, None, &no_harness(), &more);
     crate::skillstudio::with_the_projects_needs(&mut page, tmp.path(), &[]);
 
     let counted =
@@ -444,6 +444,6 @@ fn an_extensions_lint_is_a_problem_in_a_skill_counted_alike_on_the_page_and_a_su
     assert_eq!(deploy.lint, ["House style: steps are numbered"]);
     assert_eq!(kinds(&page.needs), [(NeedKind::Problem, "deploy")]);
     assert_eq!(counted, page.needs.len());
-    let unlinted = studio(tmp.path(), None, true, None, None, &no_harness());
+    let unlinted = studio(tmp.path(), None, None, None, &no_harness());
     assert_eq!(unlinted.needs, []);
 }

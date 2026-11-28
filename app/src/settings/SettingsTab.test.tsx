@@ -73,12 +73,18 @@ describe("the Settings tab, at the You level", () => {
       "Pools",
       "Accounts",
       "Profiles",
-      "Previews",
     ]);
     expect(group("Text")).toHaveAttribute("aria-current", "page");
     expect(shown()).toHaveAccessibleName("Text");
     expect(slider(/window text size/i)).toBeInTheDocument();
     expect(screen.queryByRole("radiogroup", { name: "Your editor" })).not.toBeInTheDocument();
+  });
+
+  it("lists no Previews group: the Skill studio is always on, with no switch (#2786)", () => {
+    render(<SettingsTab />);
+
+    expect(within(nav()).queryByRole("button", { name: "Previews" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Skill studio" })).toBeNull();
   });
 
   it("says the You level is this machine's, and where it is kept", () => {

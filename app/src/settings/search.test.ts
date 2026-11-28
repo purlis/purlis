@@ -52,13 +52,11 @@ describe("every setting at every level", () => {
     expect(asked).toEqual([]);
   });
 
-  it("holds the Skills groups back while the Skill studio is off", () => {
-    const groups = (on: boolean) =>
-      everySetting({ plane: "p", workspace: "w", skillStudio: on }).flatMap((one) =>
-        one.groups.map((group) => group.id),
-      );
-    expect(groups(false)).not.toContain("project.skills");
-    expect(groups(true)).toContain("project.skills");
+  it("finds the Skills groups too, as Settings offers them on every machine (#2786)", () => {
+    const groups = everySetting({ plane: "p", workspace: "w" }).flatMap((one) =>
+      one.groups.map((group) => group.id),
+    );
+    expect(groups).toContain("project.skills");
   });
 });
 
