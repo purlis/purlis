@@ -162,7 +162,43 @@ fn version_tag_re() -> &'static Regex {
 /// payload and asks [`unattended`] of its `permission_mode`, and the core holds no globals.
 pub fn release_floor_reason(cmd: &str, unattended: bool) -> Option<String> {
     // Read twice where a `${…}` held a blank ([`shellseg::on_either_reading`], #7709, round 4).
-    shellseg::on_either_reading(|| metered(cmd, unattended).0)
+    let read = |cmd: &str| shellseg::on_either_reading(|| metered(cmd, unattended).0);
+    said_of_a_heredoc_it_runs(cmd, read(cmd), read)
+}
+
+/// What a chat is told when only a heredoc body a program runs earned the refusal (#7880).
+pub const A_HEREDOC_IT_RUNS: &str = "The words that earned this stand in a heredoc handed to an \
+     interpreter (`python3 -`, `node -`), which may run commands, so purlis reads them as \
+     commands. To write or change a file, write it with your editor tool (Write or Edit) instead \
+     of a heredoc.";
+
+/// `said`, the refusal of `cmd`, with [`A_HEREDOC_IT_RUNS`] after it where `cmd` hands a
+/// heredoc's body to an interpreter of another language ([`crate::heredoc::LayoutLine::foreign`],
+/// `python3 - <<'EOF'`) and `read` lets the line through without those bodies: then the body's
+/// words, not the command, earned it. The refusal itself stands. A body a shell runs keeps the
+/// answer the Python charter recorded: its lines are commands.
+fn said_of_a_heredoc_it_runs(
+    cmd: &str,
+    said: Option<String>,
+    read: impl Fn(&str) -> Option<String>,
+) -> Option<String> {
+    let said = said?;
+    if !cmd.contains("<<") {
+        return Some(said);
+    }
+    let layout = crate::heredoc::heredoc_layout(cmd);
+    if !layout.iter().any(|l| l.body && l.foreign) {
+        return Some(said);
+    }
+    let without: Vec<&str> = layout
+        .iter()
+        .filter(|l| !(l.body && l.foreign))
+        .map(|l| l.text.as_str())
+        .collect();
+    if read(&without.join("\n")).is_some() {
+        return Some(said);
+    }
+    Some(format!("{said} {A_HEREDOC_IT_RUNS}"))
 }
 
 /// **The floor's merge half alone** (R-115): the refusal [`release_floor_reason`] gives
@@ -172,7 +208,8 @@ pub fn release_floor_reason(cmd: &str, unattended: bool) -> Option<String> {
 /// ([`crate::mergehold`]), in any mode: every route the floor knows is the same act to it.
 pub fn merge_reason(cmd: &str) -> Option<String> {
     let _only = OnlyMerges::on();
-    shellseg::on_either_reading(|| metered(cmd, true).0)
+    let read = |cmd: &str| shellseg::on_either_reading(|| metered(cmd, true).0);
+    said_of_a_heredoc_it_runs(cmd, read(cmd), read)
 }
 
 /// **The floor reads for merges alone while this lives** ([`merge_reason`]), and as it did before
