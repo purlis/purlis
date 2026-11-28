@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795831709273,
+  "lastUpdate": 1795832399696,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58338,6 +58338,48 @@ window.BENCHMARK_DATA = {
             "value": 100.9203715,
             "unit": "ms",
             "extra": "median of 5 runs: 100.371, 100.735, 100.920, 101.137, 101.519 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c227145fd48c8f024a3c886f8e15c88eaca4833e",
+          "message": "Forget always names the machine that keeps the runner (#7873) (#7966)\n\n* Forget names the machine that keeps the runner, however long the names (#7873)\n\nForget's answer was one sentence per runner, passed whole through\nshown_safely, whose 200-character cut fell before the machine's name.\nThe core now answers what stays as records (runner, container, volume,\nmachine); the app shows each part safely on its own and builds the\nsentence from the parts, so it is never cut as a whole.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8EDRYH0CNQPRAESKCVMYXG3\nPurlis-Persona: steward\n\n* Forget's parts are capped at a route's longest name, never cut (#7873)\n\nReview fixes: a machine's name may be up to 253 characters, past\nshown_safely's 200, so each part of Forget's answer is shown safely\nwithin 253 (shown_safely_within), which no part purlis keeps exceeds.\nThe joiner moves onto LeftThere (all_said), clear of dockerpools'\nleft_said, and the tests share one runners.json fixture.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8EDRYH0CNQPRAESKCVMYXG3\nPurlis-Persona: steward\n\n* Forget on main's behaviour suite: forget_on answers the window's words from #7940's records\n\n#7837's forget_on and fault suite case 7 used forget_untrusted's old string. forget_on now\nreturns what the window shows, built from the LeftThere records, and case 7 asserts on that\ntext, the names and the remove commands, with the #7873 workaround gone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8F8G7YDD6Y9X960MG9KXP8X\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T01:17:30Z",
+          "tree_id": "ebe1d519ecdb72abc56c1e2e3cf3de53f97fafec",
+          "url": "https://github.com/purlis/purlis/commit/c227145fd48c8f024a3c886f8e15c88eaca4833e"
+        },
+        "date": 1795832391253,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.704912,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.699, 0.704, 0.705, 0.706, 0.712 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.384902,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.229, 16.303, 16.385, 16.663, 16.685 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.91685849999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.498, 101.679, 101.917, 102.499, 102.653 ms"
           }
         ]
       }
