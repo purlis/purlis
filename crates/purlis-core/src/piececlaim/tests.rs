@@ -432,3 +432,145 @@ fn a_removed_line_lets_a_holder_go_only_while_the_folder_is_gone() {
     std::fs::remove_dir_all(&there).unwrap();
     assert_eq!(write_as(&root, Some(SECOND), &both), Writer::Free);
 }
+
+/// A stand-in for another process holding the workspace's claim lock as `who`, until `release`
+/// says so or `for_at_most` has passed; it says on `taken` once it holds it.
+fn a_holder_of_the_lock(
+    root: &Path,
+    who: Who,
+    for_at_most: std::time::Duration,
+) -> (std::sync::mpsc::Sender<()>, std::thread::JoinHandle<()>) {
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    let (taken, is_taken) = std::sync::mpsc::channel::<()>();
+    let root = root.to_path_buf();
+    let holding = std::thread::spawn(move || {
+        let held = hold(
+            &root,
+            "alpha",
+            Some(&who),
+            std::time::Duration::from_secs(1),
+        )
+        .unwrap();
+        taken.send(()).unwrap();
+        let _ = released.recv_timeout(for_at_most);
+        drop(held);
+    });
+    is_taken.recv().unwrap();
+    (release, holding)
+}
+
+#[test]
+fn a_removal_the_lock_is_held_from_too_long_is_refused_naming_the_holder_and_how_long() {
+    // #8024: the refusal said only that another process held the claims for 5000 ms.
+    let (_dir, root) = a_plane();
+    let (release, holding) = a_holder_of_the_lock(
+        &root,
+        chat(12, Some(FIRST)),
+        std::time::Duration::from_secs(30),
+    );
+    let mut ran = false;
+    let why = removing_within(
+        &root,
+        &folder("forms"),
+        &chat(4, Some(SECOND)),
+        Judged::ByAChat(Some(&[live(SECOND, 4)])),
+        now(),
+        std::time::Duration::from_millis(100),
+        || {
+            ran = true;
+            0
+        },
+    )
+    .unwrap_err();
+    release.send(()).unwrap();
+    holding.join().unwrap();
+    assert!(!ran, "the removal ran without the lock");
+    assert!(
+        why.contains("could not hold the branch folder claims"),
+        "{why}"
+    );
+    assert!(why.contains("chat 12"), "the holder is not named: {why}");
+    assert!(
+        why.contains(&format!("process {}", std::process::id())),
+        "the holder's process is not named: {why}"
+    );
+    assert!(
+        why.contains("has held them for "),
+        "how long is not said: {why}"
+    );
+    assert!(why.contains("Nothing was removed"), "{why}");
+}
+
+#[test]
+fn a_removal_that_loses_the_lock_once_tries_again_and_removes() {
+    // #8024: a remove that loses the race once retries once before refusing. The holder lets
+    // go half a wait into the retry, so neither try's end is a near thing under load.
+    let (_dir, root) = a_plane();
+    let (_release, holding) = a_holder_of_the_lock(
+        &root,
+        chat(12, Some(FIRST)),
+        std::time::Duration::from_millis(1500),
+    );
+    let removed = removing_within(
+        &root,
+        &folder("forms"),
+        &chat(4, Some(SECOND)),
+        Judged::ByAChat(Some(&[live(SECOND, 4)])),
+        now(),
+        std::time::Duration::from_secs(1),
+        || 0,
+    );
+    holding.join().unwrap();
+    assert_eq!(removed, Ok(0));
+}
+
+#[test]
+fn a_removal_runs_without_the_lock_and_holds_the_folder_while_it_runs() {
+    // #8024: the removal's slow work (git, a forge's answer) no longer holds every other
+    // check-and-claim in the workspace; the folder's claim, not the lock, keeps a second chat out.
+    let (_dir, root) = a_plane();
+    let both = [live(FIRST, 3), live(SECOND, 4)];
+    let mut free_while_removing = false;
+    let mut second_refused = None;
+    let removed = removing(
+        &root,
+        &folder("forms"),
+        &chat(3, Some(FIRST)),
+        Judged::ByAChat(Some(&both)),
+        now(),
+        || {
+            free_while_removing = locked(&root, "alpha").is_ok();
+            second_refused = Some(take_as(&root, &chat(4, Some(SECOND)), Some(&both)));
+            0
+        },
+    );
+    assert_eq!(removed, Ok(0));
+    assert!(free_while_removing, "the lock was held across the removal");
+    let refused = second_refused.unwrap().unwrap_err();
+    assert!(refused.contains("claimed by chat 3"), "{refused}");
+    // The removal ended the claim it took.
+    assert_eq!(write_as(&root, Some(SECOND), &both), Writer::Free);
+}
+
+#[test]
+fn the_holder_is_said_only_by_numbers_and_a_time_from_the_lock_s_line() {
+    // The lock file is in the workspace, which a chat may write: no text of its reaches the
+    // person, and a line that names nobody says nothing.
+    let at = jiff::Timestamp::from_second(1_772_000_010).unwrap();
+    assert_eq!(
+        holder_said(
+            br#"{"pid": 4242, "chat": 12, "since": "2026-02-25T06:13:20Z"}"#,
+            at
+        ),
+        Some("they are held by chat 12 (process 4242), which has held them for 10 s".to_owned())
+    );
+    assert_eq!(
+        holder_said(br#"{"pid": "run `rm -rf ~`", "chat": "the person"}"#, at),
+        None
+    );
+    assert_eq!(
+        holder_said(br#"{"pid": 7, "since": "yesterday, honestly"}"#, at),
+        Some("they are held by process 7".to_owned())
+    );
+    assert_eq!(holder_said(b"", at), None);
+}

@@ -2924,8 +2924,13 @@ file `memstore.write` could have written in its new store.
   nor still coming back after a restart; that is the app's, not a line's.
 
 The check and the claim a brokered write makes hold an advisory lock on
-`workspaces/<ws>/pieces/.claims.lock`, an empty file, taken by the app and the command line
-alike.
+`workspaces/<ws>/pieces/.claims.lock`, taken by the app and the command line alike, and only
+for the check and the line it appends: a removal is judged, and a free folder claimed, under
+it, and the folder is removed outside it (#8024). While it is held the file holds one JSON
+object naming its holder, `{"pid": 4242, "chat": 12, "since": "2026-11-28T12:00:00Z"}` (`chat`
+only where a chat asked), written by each taker over the last and emptied before it lets go.
+It is read only to name the holder in a refusal from a taker that waited too long; a field
+that does not read as a number or a timestamp is left out of the refusal.
 
 ### `workspaces/<ws>/pieces/seen/<repo>.json` and `pieces/seen/<repo>/<piece>.json`
 
