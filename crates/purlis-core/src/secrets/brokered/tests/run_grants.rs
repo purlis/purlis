@@ -4398,7 +4398,7 @@ fn the_terminals_of_8017_are_offered_no_run_grant() {
         "guake",
         "tilda",
         "yakuake",
-        "eterm",
+        "Eterm",
         "aterm",
         "mlterm",
         "roxterm",
@@ -4452,8 +4452,9 @@ fn the_vm_and_container_runners_of_8017_are_offered_no_run_grant() {
 
 /// The interpreters #8017 names, each of which runs the code or the script it is handed:
 /// `newlisp`, `picolisp`, Gerbil's `gxi` and `gerbil`, CHICKEN's compiler `csc` (also the C#
-/// compiler's name), the shell `murex`, Ammonite's `amm` and `ammonite`, and coursier's `cs` and
-/// `coursier`, whose `launch` runs what it fetches.
+/// compiler's name, whose analyzers and source generators run as it compiles), the shell
+/// `murex`, Ammonite's `amm` and `ammonite`, and coursier's `cs` and `coursier`, whose `launch`
+/// runs what it fetches.
 #[test]
 fn the_interpreters_of_8017_are_offered_no_run_grant() {
     for name in [

@@ -3172,8 +3172,8 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "warp-terminal",
     // The tmux session managers #8017 names beside `tmuxinator` and `tmuxp`, refused whole on
     // what each is for: `teamocil`, `smug`, `sesh` and `tmuxifier` run the commands of a layout
-    // file in the panes they open, and `mux` is a name `tmuxinator` is often installed or aliased
-    // as.
+    // file in the panes they open, and `mux`, a name `tmuxinator` is often installed or aliased
+    // as by #8017's account, is kept with them on the conservative side.
     "teamocil",
     "smug",
     "sesh",
@@ -3206,8 +3206,9 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // The interpreters #8017 names, refused on this list and not on REFUSED_NAMES, as #7964's and
     // #7988's are: each runs the code or the script it is handed. `newlisp`, `picolisp`, Gerbil's
     // `gxi` and `gerbil`, CHICKEN's compiler `csc` (`csi` is refused; `csc` is also the C#
-    // compiler's name, whose analyzers run as it compiles), the shell `murex`, Ammonite's `amm`
-    // and `ammonite`, and coursier's `cs` and `coursier` (`cs launch` runs what it fetches).
+    // compiler's name, whose analyzers and source generators run as it compiles), the shell
+    // `murex`, Ammonite's `amm` and `ammonite`, and coursier's `cs` and `coursier` (`cs launch`
+    // runs what it fetches).
     "newlisp",
     "picolisp",
     "gxi",

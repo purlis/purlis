@@ -5,7 +5,7 @@ as delegated decisions (delegated: recommended path). It follows *the terminals,
 compilers, interpreters and builders of #7988 are refused a Run grant* (2026-11-28), whose
 closing filed these families as #8017.
 
-## Not read in source, but for one, and why each is refused all the same
+## Not read in source, and why each is refused all the same
 
 Of the programs #8017 names, one has a file of that name on the search path of the machine that
 did this (`/usr/bin`, `/bin`, `/usr/sbin`, `/sbin`, `/usr/local/bin`, `/opt/homebrew/bin` and
@@ -52,7 +52,8 @@ in a reviewed line.
   they are handed, or the shell their settings name, in the window they open.
 - **tmux session managers**, as `tmuxinator` and `tmuxp` are: `teamocil`, `smug`, `sesh` and
   `tmuxifier` run the commands of a layout file in the panes they open, and `mux` is a name
-  `tmuxinator` is often installed or aliased as.
+  `tmuxinator` is often installed or aliased as, by #8017's account; it is kept with them on the
+  conservative side.
 - **VM and container runners**, as `lima`, `lxc` and `virsh` are: libguestfs's `virt-customize`
   and `virt-sysprep` run a command in a guest's disk image and `guestfish` runs one there by its
   `command` and `sh`; `virt-install` installs and boots a guest; `crictl exec` runs a command in a
@@ -87,12 +88,12 @@ the machine's 1,752 program names, before and after the rows went in, found one 
 `ktrace`, a row itself, and nothing reached by a form: no collateral on that machine for #7825.
 Elsewhere, short and common words cost the most. These are examples, not a complete list:
 
-- the short rows `cs`, `amm`, `mux`, `rio` and `smug` reach every `<word>-<name>`,
-  `<name>-<word>` and `g<name>`: `cs` reaches any `cs-<word>` and `gcs`, and `mux` any
-  `<word>-mux`, whatever program each is.
+- the short rows `cs`, `amm`, `mux`, `rio` and `smug` cost the most, as every row reaches its
+  `<word>-<name>`, `<name>-<word>`, `g<name>`, `gnu<name>` and versioned forms: `cs` reaches any
+  `cs-<word>`, `gcs` and `cs2`, and `mux` any `<word>-mux`, whatever program each is.
 - one name is two programs: `tabby` is also TabbyML's model server, `contour` Project Contour's
-  Kubernetes ingress controller, `csc` the C# compiler and `hyper` more than one tool's name.
-  Each loses its Allow with the terminal or the interpreter.
+  Kubernetes ingress controller and `csc` the C# compiler. Each loses its Allow with the terminal
+  or the interpreter.
 - `lxd` reaches LXD's own `lxd-*` programs by their first part, `lxd-benchmark` and
   `lxd-to-incus` among them.
 

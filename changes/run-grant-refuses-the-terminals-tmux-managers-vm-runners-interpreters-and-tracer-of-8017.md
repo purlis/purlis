@@ -12,6 +12,6 @@
   as a tool (#8017).
 - **Programs that share a name or a name's form with these lose their Allow with them**, for
   example TabbyML's `tabby` server, Project Contour's `contour`, the C# compiler `csc`, LXD's
-  `lxd-*` programs (by `lxd`), and every `<name>-<word>`, `<word>-<name>` and `g<name>` of the
+  `lxd-*` programs (by `lxd`), and any `<name>-<word>`, `<word>-<name>` or `g<name>` of the
   short rows `cs`, `amm`, `mux`, `rio` and `smug`. Giving the harmless ones back is its own change
   (#7825).
