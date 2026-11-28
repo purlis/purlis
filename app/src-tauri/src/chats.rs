@@ -7317,6 +7317,14 @@ impl Chats {
         lock(&self.open).get(&session)?.harness
     }
 
+    /// The numbers of the chats open, a shell tab among them, lowest first: what the gate of
+    /// automatic hibernation reads (SC-4g, #7636), without what [`Self::open_now`] gathers.
+    pub fn sessions_open(&self) -> Vec<u32> {
+        let mut open: Vec<u32> = lock(&self.open).keys().copied().collect();
+        open.sort_unstable();
+        open
+    }
+
     /// What `session` was started as, where charter has it open: its harness, or `None` inside
     /// for a shell. The outer `None` is a chat charter does not have open.
     pub fn started_as(&self, session: u32) -> Option<Option<Harness>> {
@@ -7355,6 +7363,40 @@ impl Chats {
     pub fn handed_from_for_tests(&self, session: u32, from: purlis_core::reopen::HandedFrom) {
         if let Some(open) = lock(&self.open).get_mut(&session) {
             open.chat.from = Some(from);
+        }
+    }
+
+    /// Chat `session` runs on the runner `runner`, as a confinement held on another machine
+    /// says: for a test of what is counted of a runner's chat, without a runner.
+    #[cfg(test)]
+    pub fn on_a_runner_for_tests(&self, session: u32, runner: &str) {
+        #[derive(Debug)]
+        struct Away;
+        impl purlis_core::sandbox::HeldElsewhere for Away {
+            fn id(&self) -> &str {
+                "away"
+            }
+            fn withdraw_port(&self, _: u16) -> Result<(), String> {
+                Ok(())
+            }
+            fn board(&self) -> Option<Arc<dyn purlis_core::sandbox::Board>> {
+                None
+            }
+        }
+        let confinement = purlis_core::sandbox::Confinement::held_on_another_machine(
+            purlis_core::sandbox::Placed {
+                http: 1,
+                socks: 2,
+                tmp: None,
+                routed: None,
+                ssh: None,
+                left_out: Vec::new(),
+                host_name: Some(runner.to_owned()),
+            },
+            Box::new(Away),
+        );
+        if let Some(open) = lock(&self.open).get_mut(&session) {
+            open.confinement = Some(confinement);
         }
     }
 

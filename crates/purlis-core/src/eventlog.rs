@@ -2460,13 +2460,19 @@ impl Recorder {
         }
     }
 
-    /// **Chat `number`'s current run is hibernated by the operator** (SC-4a, #7630, ADR 0076 as
-    /// amended 2026-11-25): a `run.moved` under it, from `input-required` to `hibernated` for
-    /// `operator`. Not an end: its sub-agents are left as they are, and the run ends
-    /// `completed | superseded` when the chat is woken or ended ([`Recorder::end_run_with`]).
+    /// **Chat `number`'s current run is hibernated** (SC-4a, #7630, ADR 0076 as amended
+    /// 2026-11-25): a `run.moved` under it, from `input-required` to `hibernated` for `cause`,
+    /// `operator` or, the app's own (SC-4g, #7636), `idle`. Not an end: its sub-agents are
+    /// left as they are, and the run ends `completed | superseded` when the chat is woken or
+    /// ended ([`Recorder::end_run_with`]).
     /// None for a chat the log was never told of, one whose start is still held, or one whose
     /// run has already ended.
-    pub fn hibernated(&mut self, plane: &Path, number: u32) -> io::Result<Option<Event>> {
+    pub fn hibernated(
+        &mut self,
+        plane: &Path,
+        number: u32,
+        cause: Cause,
+    ) -> io::Result<Option<Event>> {
         let Some(who) = self.chats.get(&(plane.to_path_buf(), number)).cloned() else {
             return Ok(None);
         };
@@ -2481,7 +2487,7 @@ impl Recorder {
         let body = serde_json::json!({
             "from": "input-required",
             "to": "hibernated",
-            "cause": Cause::Operator.word(),
+            "cause": cause.word(),
         });
         self.append(&under, "run.moved", body).map(Some)
     }

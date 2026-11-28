@@ -35,6 +35,7 @@ mod askoutcome;
 mod askrules;
 mod askwrites;
 mod atlimit;
+mod autohibernate;
 mod autosave;
 mod awayrunners;
 mod blockedsave;
@@ -5291,6 +5292,35 @@ pub fn run() {
                     })
                 }),
             ));
+            // **The gate of automatic hibernation** (SC-4g, #7636): it reads that class's hot
+            // target, and nothing while the class is not known, on a thread of its own.
+            {
+                let handle = app.handle().clone();
+                let gate = app.state::<planes::Planes>().gate().clone();
+                // The class read, from `Reading` to `Known`: the gate reads its target now. Told
+                // before the target is, so a read that ends in between is not missed.
+                let poked = std::sync::Arc::downgrade(&gate);
+                app.state::<diagnostics::Device>()
+                    .telling_known(std::sync::Arc::new(move || {
+                        if let Some(gate) = poked.upgrade() {
+                            gate.poke();
+                        }
+                    }));
+                gate.reads_its_target(std::sync::Arc::new(move || {
+                    match handle.state::<diagnostics::Device>().class() {
+                        diagnostics::DeviceClass::Known { hot_target, .. } => Some(hot_target),
+                        diagnostics::DeviceClass::Reading | diagnostics::DeviceClass::NotKnown => {
+                            None
+                        }
+                    }
+                }));
+                if let Err(why) = gate.start() {
+                    tracing::warn!(
+                        "purlis: the gate of automatic hibernation did not start ({why}): \
+                         no chat is hibernated by itself"
+                    );
+                }
+            }
 
             // The working directory, resolved ONCE, to decide which plane the first window
             // opens. Everything after this names its plane; nothing asks the working
