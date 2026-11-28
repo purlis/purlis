@@ -3135,6 +3135,9 @@ async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
         told_whole(&shared, view);
     }
     let mut first = true;
+    // Its `view_first_frame` step ends at the first chunk with bytes: one look at the views, not
+    // one for every chunk drawn after it.
+    let mut drew_nothing_yet = true;
     loop {
         let chunk = tokio::select! {
             chunk = reader.next() => chunk,
@@ -3160,7 +3163,7 @@ async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
         // Each chunk is one piece, and carries exactly its own bytes: a character cut between
         // two chunks is the pane's terminal's to put together, so nothing is held back here.
         give(&shared, view, epoch, bytes.len(), bytes.to_vec());
-        if !bytes.is_empty() {
+        if !bytes.is_empty() && std::mem::take(&mut drew_nothing_yet) {
             first_drawn(&shared, view);
         }
         if reader.snapshot_complete() {

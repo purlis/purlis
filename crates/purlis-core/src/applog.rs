@@ -43,7 +43,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 use tracing::Level;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
-use tracing_subscriber::filter::Targets;
+use tracing_subscriber::filter::{LevelFilter, Targets};
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{Registry, reload};
@@ -229,13 +229,19 @@ fn terminal_only(
 }
 
 /// charter's warnings to `screen`, and the handle that widens them to [`what_a_log_keeps`].
+/// A refused step's line (`purlis::step` at `warn`, #7864) is the log's, never a command's
+/// answer, so it is kept off until a service widens the filter.
 fn terminal_widening(
     screen: impl for<'a> MakeWriter<'a> + Send + Sync + 'static,
 ) -> (
     impl tracing::Subscriber + Send + Sync,
     reload::Handle<Targets, Registry>,
 ) {
-    let (filter, widening) = reload::Layer::new(Targets::new().with_target("purlis", Level::WARN));
+    let (filter, widening) = reload::Layer::new(
+        Targets::new()
+            .with_target("purlis", Level::WARN)
+            .with_target("purlis::step", LevelFilter::OFF),
+    );
     (
         tracing_subscriber::registry()
             .with(filter)
