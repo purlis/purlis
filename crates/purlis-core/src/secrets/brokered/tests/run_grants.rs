@@ -3997,3 +3997,55 @@ fn the_build_test_and_packaging_tools_of_7833_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The rest of execline's programs #7964 names, each a chain loader that runs the program after
+/// it once it has set a variable, a descriptor, a signal or a loop up (`backtick`, `withstdinas`,
+/// `export`, `unexport`, `importas`, `elglob`, `forbacktickx`, `forstdin`, `loopwhilex`, `trap`,
+/// `tryexec`, `piperw`, `fdclose`, `fdblock`, `fdswap`, `fdreserve`, `heredoc`,
+/// `multisubstitute`, `multidefine`, `define`, `runblock`, `shift`, `wait`, `case`, `envfile`,
+/// `getpid`, `getcwd`, `posix-cd`, `posix-umask`), with `homeof`, kept with them on the
+/// conservative side; and the chain loaders of #7964's comment: ucspi-tcp's `rblsmtpd` and
+/// `fixcrio`, busybox's `udpsvd`, and s6-networking's `s6-tcpserver4d` and `s6-tcpserver6d`,
+/// each of which runs the program after it.
+#[test]
+fn execlines_other_programs_and_the_chain_loaders_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "backtick",
+        "withstdinas",
+        "export",
+        "unexport",
+        "importas",
+        "elglob",
+        "forbacktickx",
+        "forstdin",
+        "loopwhilex",
+        "trap",
+        "tryexec",
+        "piperw",
+        "fdclose",
+        "fdblock",
+        "fdswap",
+        "fdreserve",
+        "heredoc",
+        "multisubstitute",
+        "multidefine",
+        "define",
+        "runblock",
+        "shift",
+        "wait",
+        "case",
+        "envfile",
+        "getpid",
+        "getcwd",
+        "homeof",
+        "posix-cd",
+        "posix-umask",
+        "rblsmtpd",
+        "fixcrio",
+        "udpsvd",
+        "s6-tcpserver4d",
+        "s6-tcpserver6d",
+    ] {
+        refused_as_running_others(name);
+    }
+}
