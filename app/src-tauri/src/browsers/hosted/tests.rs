@@ -2164,8 +2164,8 @@ fn a_start_waiting_for_the_turn_says_so() {
 /// that does not change draws nothing after it. The fault suite's view, as B1 waits on it,
 /// counts that frame.
 #[test]
-fn a_browser_view_drawn_again_by_the_frame_that_says_it_is_back_has_drawn_again() {
-    use crate::behaviour::fault_suite::a_view_of;
+fn a_browser_views_redraw_counts_the_frame_that_said_it_is_back() {
+    use crate::behaviour::a_view_of;
 
     let (window, pushes) = window_on_a_runner();
     let program = window.browsers.open(&window.root).unwrap();
@@ -2181,16 +2181,53 @@ fn a_browser_view_drawn_again_by_the_frame_that_says_it_is_back_has_drawn_again(
         })
         .unwrap();
     until("the view is said to be reconnecting", || {
-        view.told_since(view.since) == [Reconnection::Reconnecting]
+        view.told_since_opened() == [Reconnection::Reconnecting]
     });
 
     // Its stream's first frame, the host's snapshot, and the page stays as it is.
     screen.makes(b"\xff\xd8 a page");
     // As B1 waits: every 20 ms, until the view is back.
-    crate::behaviour::ssh_reconnect::until(Duration::from_secs(10), "the view is back", || {
-        view.told_since(view.since)
+    crate::behaviour::until_within(Duration::from_secs(10), "the view is back", || {
+        view.told_since_opened()
             .ends_with(&[Reconnection::Reconnected])
     });
 
     until("the same browser draws again", || view.drew_again());
+}
+
+/// **B1's view does not count a frame from before the drop as the redraw** (#7979): a browser
+/// that drew, lost its link and was told it is back, with no frame since, has not drawn again.
+/// Without this, B1 would pass for a browser that never draws again.
+#[test]
+fn a_browser_view_told_it_is_back_with_no_frame_since_has_not_drawn_again() {
+    use crate::behaviour::a_view_of;
+
+    let (window, pushes) = window_on_a_runner();
+    let program = window.browsers.open(&window.root).unwrap();
+    let screen = window.started.started()[0].clone();
+    let view = a_view_of(&window.browsers, &program);
+    screen.makes(b"\xff\xd8 a page");
+    until("the browser draws its page", || view.drew_a_frame());
+    pushes
+        .send(Pushed::LinkDown {
+            why: "the link to it ended".into(),
+            key_changed: false,
+            gone: false,
+            refused: false,
+            host_key_changed: false,
+        })
+        .unwrap();
+    until("the view is said to be reconnecting", || {
+        view.told_since_opened() == [Reconnection::Reconnecting]
+    });
+
+    pushes.send(Pushed::LinkBack {}).unwrap();
+    until("the view is back", || {
+        view.told_since_opened() == [Reconnection::Reconnecting, Reconnection::Reconnected]
+    });
+
+    assert!(
+        !view.drew_again(),
+        "no frame came since it was told it is back"
+    );
 }

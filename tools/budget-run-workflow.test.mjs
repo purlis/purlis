@@ -3,31 +3,17 @@
 
 // `budget-run.yml`'s shape (#7737, spec #7730): the budget run measures on the benchmark Mac alone,
 // from no trigger a pull request can reach, one run at a time with none cancelled once started,
-// with `release.yml`'s steps for a persistent runner and its light checkout, in both renderer
-// arms. Run with `node --test tools/`.
+// with `release.yml`'s steps for a persistent runner and its light checkout, `outcome-bars.yml`'s
+// paint check, in both renderer arms. Run with `node --test tools/`.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { jobLines } from "./workflow-jobs.mjs";
 
 const text = readFileSync(new URL("../.github/workflows/budget-run.yml", import.meta.url), "utf8");
 
-/** The workflow's jobs, each as its own lines, by name: the two-space keys under `jobs:`. */
-function jobsOf(yml) {
-  const jobs = {};
-  let current = null;
-  let inJobs = false;
-  for (const line of yml.split("\n")) {
-    if (/^\S/.test(line)) {
-      inJobs = line.startsWith("jobs:");
-      current = null;
-      continue;
-    }
-    const key = inJobs && line.match(/^ {2}([\w-]+):\s*$/);
-    if (key) jobs[(current = key[1])] = [];
-    else if (current) jobs[current].push(line);
-  }
-  return jobs;
-}
+/** The workflow's jobs, each as its own lines (comments kept), by name. */
+const jobsOf = (text) => Object.fromEntries(jobLines(text, { comments: true }));
 
 /** The steps of the list after `header`, each as its lines, comments left out. */
 function stepsAfter(yml, header) {
@@ -46,13 +32,16 @@ function stepsAfter(yml, header) {
 const code = (lines) => lines.filter((l) => !/^\s*#/.test(l));
 const jobs = jobsOf(text);
 const mac = code(jobs["budget-run"]).join("\n");
-const macSteps = () => {
+/** The steps of the job `job`, each as its lines. */
+const stepsOf = (job) => {
   const lines = text.split("\n");
-  const from = lines.findIndex((l) => /^ {2}budget-run:\s*$/.test(l));
-  const to = lines.findIndex((l, i) => i > from && /^ {2}[\w-]+:\s*$/.test(l));
-  return stepsAfter(lines.slice(from, to).join("\n"), /^ {4}steps:$/);
+  const from = lines.findIndex((l) => new RegExp(`^ {2}${job}:\\s*$`).test(l));
+  const next = lines.findIndex((l, i) => i > from && /^ {2}[\w-]+:\s*$/.test(l));
+  return stepsAfter(lines.slice(from, next < 0 ? undefined : next).join("\n"), /^ {4}steps:$/);
 };
+const macSteps = () => stepsOf("budget-run");
 const named = (name) => macSteps().find((step) => step.includes(`- name: ${name}`));
+const recordSteps = () => stepsOf("budget-record");
 
 test("it starts on main's push and nightly, and on nothing else", () => {
   // The whole `on:` block, comments aside: no other trigger, so no pull request reaches it
@@ -84,7 +73,7 @@ test("one run at a time and the newest pending push, none cancelled once started
   assert.doesNotMatch(text, /cancel-in-progress: true/);
 });
 
-test("the Mac job has release.yml's steps for a persistent runner, each only where it is self-hosted", () => {
+test("the Mac job has release.yml's steps for a persistent runner and outcome-bars.yml's paint check, each only where it is self-hosted", () => {
   for (const name of [
     "A self-hosted runner's workspace starts empty",
     "A self-hosted runner's Cargo, rustup and temporary folder are this job's own",
@@ -140,4 +129,50 @@ test("only the record job writes, on a GitHub-hosted runner, on main, after the 
   assert.doesNotMatch(record, /rust-cache|actions\/cache|cache:/);
   // The Mac never holds a token that writes.
   assert.doesNotMatch(mac, /contents:\s*write|secrets\./);
+});
+
+test("the series file is recorded as the trend and the evidence file as the evidence, never crossed", () => {
+  // The Mac's step writes each to its own path: the pinned screen's points to `--out`, any other's
+  // to `--evidence-out`.
+  const points = named("The results as macos-max series points");
+  assert.match(points, /--out budget\/series\.json --evidence-out budget\/evidence\.json/);
+  // The record job hands each file to its own data set, and runs each step only when its file came.
+  const recording = (file) => {
+    const steps = recordSteps().filter((s) => s.includes(`output-file-path: budget/${file}`));
+    assert.equal(steps.length, 1, `one step records ${file}`);
+    return steps[0];
+  };
+  const series = recording("series.json");
+  assert.match(series, /^ {10}name: budget run \(macos-max\)$/m);
+  assert.match(series, /if: hashFiles\('budget\/series\.json'\) != ''/);
+  const evidence = recording("evidence.json");
+  assert.match(evidence, /^ {10}name: budget run \(macos-max, evidence\)$/m);
+  assert.match(evidence, /if: hashFiles\('budget\/evidence\.json'\) != ''/);
+});
+
+test("the record job keeps no token in its checkout, and pushes with one only where it pushes", () => {
+  const checkout = recordSteps().find((s) => s.includes("actions/checkout@"));
+  assert.match(checkout, /persist-credentials: false/);
+  // The branch made once is pushed with the token as that one command's header, never written to
+  // `.git/config`.
+  const made = recordSteps().find((s) => s.includes("- name: The benchmarks branch, made once"));
+  assert.match(made, /TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
+  assert.match(made, /git -c "http\.https:\/\/github\.com\/\.extraheader=AUTHORIZATION: basic \$auth" push origin/);
+  assert.doesNotMatch(made, /git config|x-access-token:\$\{\{/);
+  // github-action-benchmark commits and pushes nothing (#8014); `tools/benchmarks-push.sh` pushes,
+  // with the token as its own commands' header, never written to `.git/config`.
+  for (const step of recordSteps().filter((s) => s.includes("github-action-benchmark@"))) {
+    assert.match(step, /github-token: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
+    assert.match(step, /auto-push: false/);
+  }
+  const push = recordSteps().find((s) => s.includes("run: tools/benchmarks-push.sh"));
+  assert.match(push, /TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
+  const script = readFileSync(new URL("./benchmarks-push.sh", import.meta.url), "utf8");
+  assert.match(script, /git -c "http\.https:\/\/github\.com\/\.extraheader=AUTHORIZATION: basic \$auth" "\$@"/);
+  assert.doesNotMatch(script, /git config|remote set-url/);
+});
+
+test("no record job waits in a group, where a third would replace the one waiting and lose its point", () => {
+  const record = code(jobs["budget-record"]).join("\n");
+  assert.doesNotMatch(record, /^ {4}concurrency:/m);
 });

@@ -314,6 +314,19 @@ pub fn in_force(root: &Path) -> Personal {
     honoured_over(&of(root), &super::local::confirmed_levels(root), base(root))
 }
 
+/// [`in_force`], with the project's manifest read as `plane` and its locks as `locks` (#7900).
+pub fn in_force_read_as(
+    root: &Path,
+    plane: &super::Plane,
+    locks: &super::policy::Locks,
+) -> Personal {
+    honoured_over(
+        &of(root),
+        &super::local::confirmed_levels(root),
+        base_read_as(root, plane, locks),
+    )
+}
+
 /// The levels of the project at `root` that wait for your Confirm.
 pub fn waiting(root: &Path) -> Vec<Awaiting> {
     awaiting_over(&of(root), &super::local::confirmed_levels(root), base(root))
@@ -326,12 +339,17 @@ pub fn waiting(root: &Path) -> Vec<Awaiting> {
 /// it counts as the full one.
 pub fn base(root: &Path) -> Choice {
     let plane = super::Plane::read(root);
+    base_read_as(root, &plane, &super::policy::Locks::of_plane(&plane))
+}
+
+/// [`base`], with the project's manifest read as `plane` and its locks as `locks` (#7900).
+pub fn base_read_as(root: &Path, plane: &super::Plane, locks: &super::policy::Locks) -> Choice {
     if plane.unreadable() || plane.missing() {
         return Choice::On;
     }
     // The team's bound, which holds the project's `policy = "never"` and an administrator's
     // policy as the full sandbox, and is the full one where the project turned it on.
-    super::team::allowed_levels(root).clamp(None)
+    super::team::allowed_levels_read_as(root, plane, locks).clamp(None)
 }
 
 /// Settings' Confirm of `shown`, the level the row showed for the slot: recorded as yours only

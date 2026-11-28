@@ -9,12 +9,13 @@
 # systemd as a container's init needs the container privileged, with a cgroup namespace of its own
 # and `/run` and `/run/lock` on tmpfs, so a restart empties them as a boot does.
 set -euo pipefail
-here=$(cd "$(dirname "$0")" && pwd)
 dir="$RUNNER_TEMP/ssh-runner"
 test -f "$dir/id.pub" || { echo "run tests/ssh-runner/up.sh first: it makes the key" >&2; exit 1; }
 mkdir -p "$dir/authorized-systemd"
 cp "$dir/id.pub" "$dir/authorized-systemd/keeper"
-docker build --file "$here/systemd.Dockerfile" --tag ssh-runner-systemd "$here"
+# The machine's image, pulled by digest (`tools/fixture-images.mjs prepare-all`, #7983).
+docker image inspect ssh-runner-systemd >/dev/null 2>&1 \
+  || { echo "::error::no ssh-runner-systemd image here: run node tools/fixture-images.mjs prepare-all first" >&2; exit 1; }
 docker run --detach --name ssh-runner-systemd --privileged --cgroupns=private \
   --tmpfs /run --tmpfs /run/lock --publish 127.0.0.1:2225:22 \
   --volume "$dir/authorized-systemd:/etc/ssh/authorized-src:ro" ssh-runner-systemd

@@ -199,6 +199,11 @@ unicode-security = "0.1"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
+# The core's answers, a histogram of each command's times in memory (FS-M1a, #7893), for the
+# median and 99th percentile the slow log's hourly summary writes. HdrHistogram's Rust port, the
+# standard one (MIT or Apache-2.0); without its default features it brings `byteorder` and
+# `num-traits`, both already in this workspace's lockfile.
+hdrhistogram = { version = "7.5", default-features = false }
 # The native forge clients (ADR 0070 §3, FW-2a). `ureq` is a synchronous HTTP client with no
 # runtime of its own, so a blocking core called from `charterd`'s or the app's async runtime
 # cannot panic the way a blocking `reqwest` does. rustls, with the operating system's own trust

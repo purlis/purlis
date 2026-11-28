@@ -6,6 +6,7 @@ import { NamedNotReadWords, namedNotRead, namedNotReadSaid } from "./ExplorerRef
 import { Notice } from "./Notice";
 import {
   Fragment,
+  memo,
   useEffect,
   useContext,
   useId,
@@ -275,8 +276,12 @@ import { onAMac } from "./tabKeys";
  * naming the chat on hover, which fades a few seconds after the chat goes quiet on it
  * (`touching.ts`). The core confined the path to the chat's own folder, and it was written
  * nowhere (D-86a).
+ *
+ * **Drawn only when a prop moves** (`memo`, FS-W2 #7910): a press on a tab moves none, since
+ * the catalogue's rows it reads are held while they say the same (`besideRows`, `PlaneView.tsx`)
+ * and the presses are the view's own for its life.
  */
-export function Explorer({
+export const Explorer = memo(function Explorer({
   plane,
   workspace,
   live = false,
@@ -1345,7 +1350,7 @@ export function Explorer({
       )}
     </nav>
   );
-}
+});
 
 /**
  * **Which of Explorer a drawing of it is** (#1737): the `whole` of it, as it was until the Panel

@@ -101,14 +101,18 @@ const START_OPTIONS = {
   declares_none: true,
 };
 
-/** What the window sent the core, in order. */
-export type Asked = { cmd: string; plane: string | undefined };
+/** What the window sent the core, in order; a listen or an unlisten names its event. */
+export type Asked = { cmd: string; plane: string | undefined; event?: string };
 
 /** A core holding the projects `shape` names, with every call kept. */
 type Core = {
   asked: Asked[];
-  /** Says `plane-changed` for `plane`'s answer `answer`, as the core's watcher would. */
-  planeChanged: (plane: string, answer: string) => Promise<void>;
+  /** How many Tauri listeners the window holds now, by event name: each listen it made that
+   *  it has not unlistened. */
+  listeners: () => Record<string, number>;
+  /** Says `plane-changed` for `plane`'s answer `answer`, as the core's watcher would; `null`
+   *  says the core cannot name what moved, which concerns every reader. */
+  planeChanged: (plane: string, answer: string | null) => Promise<void>;
   /** Says `chat-moved` with `payload`, as the core does for each move of a chat. */
   chatMoved: (payload: unknown) => void;
   /** Holds every `plane_sidebar` answer from now on until the function it answers is called. */
@@ -137,9 +141,16 @@ const keysReversed = (value: unknown): unknown =>
  */
 export type Answers = Record<string, (given: Record<string, unknown>) => unknown>;
 
+/**
+ * The Tauri listeners the window holds, each by its handler under its event's name: every listen
+ * not yet unlistened. **Kept across the cores a test file mounts**, because a window is one page:
+ * a listener a module makes once, as it is first loaded, is made under the first core and held
+ * for every window after it, as a webview holds it for its life.
+ */
+const listening = new Map<string, number[]>();
+
 function core(shape: Shape, answers: Answers = {}): Core {
   const asked: Asked[] = [];
-  const listening = new Map<string, number[]>();
   let held: Promise<void> | undefined;
   let reversed = false;
   const roots = Array.from({ length: shape.projects }, (_, n) => rootOf(n));
@@ -151,11 +162,22 @@ function core(shape: Shape, answers: Answers = {}): Core {
   mockIPC(async (cmd, args) => {
     const given = (args ?? {}) as Record<string, unknown>;
     const plane = given.plane as string | undefined;
-    asked.push({ cmd, plane });
+    const event = cmd.startsWith("plugin:event|") ? (given.event as string) : undefined;
+    asked.push(event === undefined ? { cmd, plane } : { cmd, plane, event });
+    // A listener is known by its handler, which is the id its unlisten names, as Tauri's own
+    // mock has it (`shouldMockEvents`).
     if (cmd === "plugin:event|listen") {
       const { event, handler } = given as { event: string; handler: number };
       listening.set(event, [...(listening.get(event) ?? []), handler]);
-      return 1;
+      return handler;
+    }
+    if (cmd === "plugin:event|unlisten") {
+      const { event, eventId } = given as { event: string; eventId: number };
+      listening.set(
+        event,
+        (listening.get(event) ?? []).filter((one) => one !== eventId),
+      );
+      return null;
     }
     const open = chats.get(plane ?? "") ?? [];
     if (cmd === "plane_sidebar" && held !== undefined) await held;
@@ -221,13 +243,23 @@ function core(shape: Shape, answers: Answers = {}): Core {
   });
   return {
     asked,
+    listeners: () =>
+      Object.fromEntries(
+        [...listening]
+          .filter(([, handlers]) => handlers.length > 0)
+          .map(([event, handlers]) => [event, handlers.length]),
+      ),
     planeChanged: async (plane, answer) => {
       await act(async () => {
         for (const handler of listening.get("plane-changed") ?? [])
           window.__TAURI_INTERNALS__.runCallback(handler, {
             event: "plane-changed",
             id: 1,
-            payload: { plane, changes: null, answers: [{ answer, workspace: null }] },
+            payload: {
+              plane,
+              changes: null,
+              answers: answer === null ? null : [{ answer, workspace: null }],
+            },
           });
       });
     },

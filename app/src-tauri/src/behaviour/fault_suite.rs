@@ -22,9 +22,9 @@
 //! only this pool's link goes and the job's other tests run beside it. Run by the remote parity
 //! job; elsewhere each runs nothing.
 
-use super::ssh_reconnect::{the_link_drops, until};
+use super::ssh_reconnect::the_link_drops;
 use super::*;
-use crate::browsers::{BrowserViewRole, WindowBrowsers};
+use crate::browsers::WindowBrowsers;
 use crate::reconnecting::Reconnection;
 use purlis_core::eventlog::browsing::{Closer, Said};
 
@@ -122,97 +122,6 @@ fn engines_on(runner: &OnTheRunner) -> usize {
         .expect("a count")
 }
 
-/// What a view of `program` was told of its link, in order, and how many frames it drew.
-pub(crate) struct Viewed {
-    told: Arc<Mutex<Vec<(Instant, Reconnection)>>>,
-    frames: Arc<Mutex<Vec<Instant>>>,
-    /// When it was opened.
-    pub(crate) since: Instant,
-    /// Whether it was told it ended for good: an empty frame.
-    ended: Arc<std::sync::atomic::AtomicBool>,
-    watching: crate::browsers::BrowserWatching,
-}
-
-impl Viewed {
-    pub(crate) fn told_since(&self, since: Instant) -> Vec<Reconnection> {
-        self.told
-            .lock()
-            .expect("what was told")
-            .iter()
-            .filter(|(at, _)| *at >= since)
-            .map(|(_, said)| *said)
-            .collect()
-    }
-
-    fn ended(&self) -> bool {
-        self.ended.load(std::sync::atomic::Ordering::SeqCst)
-    }
-
-    /// Whether it drew a frame at all. Its first can come before `watch` answers, while the
-    /// window asks the host who drives it, so no moment taken after is the one to count from.
-    pub(crate) fn drew(&self) -> bool {
-        !self.frames.lock().expect("the frames").is_empty()
-    }
-
-    /// Whether it drew a frame since it was last told Reconnected (#7955). A stream drawn
-    /// again tells Reconnected with its first frame, before the frame is handed over, and a page
-    /// that does not change draws nothing after it: counted from when the view was told, not
-    /// from when a caller noticed, that frame is not missed.
-    pub(crate) fn drew_again(&self) -> bool {
-        let back = self
-            .told
-            .lock()
-            .expect("what was told")
-            .iter()
-            .rev()
-            .find(|(_, said)| *said == Reconnection::Reconnected)
-            .map(|(at, _)| *at);
-        back.is_some_and(|back| {
-            self.frames
-                .lock()
-                .expect("the frames")
-                .iter()
-                .any(|at| *at >= back)
-        })
-    }
-}
-
-/// A focused view of `program`, as the window draws one.
-pub(crate) fn a_view_of(browsers: &WindowBrowsers, program: &str) -> Viewed {
-    let told: Arc<Mutex<Vec<(Instant, Reconnection)>>> = Arc::default();
-    let frames: Arc<Mutex<Vec<Instant>>> = Arc::default();
-    let ended: Arc<std::sync::atomic::AtomicBool> = Arc::default();
-    let (telling, drawing, ending) = (Arc::clone(&told), Arc::clone(&frames), Arc::clone(&ended));
-    let watching = browsers
-        .watch(
-            program,
-            BrowserViewRole::Focused,
-            Box::new(move |_aim, image| {
-                if image.is_empty() {
-                    ending.store(true, std::sync::atomic::Ordering::SeqCst);
-                } else {
-                    drawing.lock().expect("the frames").push(Instant::now());
-                }
-            }),
-            Box::new(|_| {}),
-            Box::new(|_| {}),
-            Arc::new(move |said| {
-                telling
-                    .lock()
-                    .expect("what was told")
-                    .push((Instant::now(), said));
-            }),
-        )
-        .expect("the browser is viewed");
-    Viewed {
-        since: Instant::now(),
-        told,
-        frames,
-        ended,
-        watching,
-    }
-}
-
 /// **Case 7: a pool forgotten during a chat ends it as Pool forgotten, and Forget lists what is
 /// left on the machine** (#7187, CONTEXT.md *Pool forgotten*): the chat ends within the quiet
 /// limit, as Pool forgotten and not with its runner, and Forget's answer names the runner's
@@ -251,7 +160,7 @@ mod a_pool_forgotten_during_a_chat_ends_it_as_pool_forgotten_and_lists_what_is_l
         let forgot = began.elapsed();
         assert!(forgot <= QUIET_LIMIT, "Forget took {forgot:?}");
         // Told within the quiet limit of the press, Forget's own time counted in it.
-        until(
+        until_within(
             QUIET_LIMIT - forgot,
             "the chat ends as Pool forgotten within the quiet limit",
             || target.sessions.lost_with_its_pool_forgotten(id),
@@ -290,10 +199,12 @@ mod b1_a_browsers_link_drops_and_returns_the_view_says_why_and_the_page_comes_ba
         let (browsers, _said) = the_windows_browsers(&target);
         let program = a_browser_on_the_runner(&target, &browsers);
         let view = a_view_of(&browsers, &program);
-        until(START_LIMIT, "the browser draws its page", || view.drew());
+        until_within(START_LIMIT, "the browser draws its page", || {
+            view.drew_a_frame()
+        });
 
         let dropped = the_link_drops(&target);
-        until(
+        until_within(
             QUIET_LIMIT,
             "the view says the link is down within the quiet limit",
             || {
@@ -301,13 +212,13 @@ mod b1_a_browsers_link_drops_and_returns_the_view_says_why_and_the_page_comes_ba
                     .contains(&Reconnection::Reconnecting)
             },
         );
-        until(START_LIMIT, "the view is back by itself", || {
+        until_within(START_LIMIT, "the view is back by itself", || {
             view.told_since(dropped)
                 .ends_with(&[Reconnection::Reconnected])
         });
         // Counted from when the view was told it is back: the frame that told it may be the
         // only one (#7955).
-        until(START_LIMIT, "the same browser draws again", || {
+        until_within(START_LIMIT, "the same browser draws again", || {
             view.drew_again()
         });
         assert_eq!(
@@ -335,7 +246,7 @@ mod b2_a_takeover_during_a_drop_keeps_control_or_the_view_says_why {
         assert!(!view.watching.person_drives, "the agent drives it first");
 
         let dropped = the_link_drops(&target);
-        until(QUIET_LIMIT, "the view says the link is down", || {
+        until_within(QUIET_LIMIT, "the view says the link is down", || {
             view.told_since(dropped)
                 .contains(&Reconnection::Reconnecting)
         });
@@ -346,7 +257,7 @@ mod b2_a_takeover_during_a_drop_keeps_control_or_the_view_says_why {
                 "control was not taken, and no reason was said"
             );
         }
-        until(START_LIMIT, "the view is back by itself", || {
+        until_within(START_LIMIT, "the view is back by itself", || {
             view.told_since(dropped)
                 .ends_with(&[Reconnection::Reconnected])
         });
@@ -400,19 +311,19 @@ mod b3_a_pool_forgotten_with_a_browser_open_ends_it_as_pool_forgotten {
             "the browser was stopped on its machine, so none is listed as left: {left:?}"
         );
         // Its view is told it ended, and is not left dimmed as though the link might come back.
-        until(QUIET_LIMIT, "the browser's view is told it ended", || {
+        until_within(QUIET_LIMIT, "the browser's view is told it ended", || {
             view.ended()
         });
         assert_ne!(
-            view.told_since(view.since).last(),
+            view.told_since_opened().last(),
             Some(&Reconnection::Reconnecting),
             "a forgotten pool's browser is ended, not reconnecting"
         );
         assert_eq!(browsers.pool_of(&program), None, "forgotten with its pool");
-        until(ENDED_WITHIN, "its engine ends on the runner", || {
+        until_within(ENDED_WITHIN, "its engine ends on the runner", || {
             engines_on(runner) == 0
         });
-        until(QUIET_LIMIT, "the chat ends as Pool forgotten", || {
+        until_within(QUIET_LIMIT, "the chat ends as Pool forgotten", || {
             target.sessions.lost_with_its_pool_forgotten(id)
         });
         let ends: Vec<Said> = said

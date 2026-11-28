@@ -3,7 +3,8 @@
 
 //! **What a piece of work cost, counted** (#7892, FS-G2): the programs it started, and how many
 //! times it read the project's sandbox manifest ([`crate::sandbox::Plane::read`]) and the
-//! sandbox's locks ([`crate::sandbox::policy::Locks::of`]), for a test that holds a read to a
+//! sandbox's locks ([`crate::sandbox::policy::Locks::of_plane`], which
+//! [`crate::sandbox::policy::Locks::of`] reads through), for a test that holds a read to a
 //! ceiling by count rather than by the clock.
 //!
 //! - **Carried by the thread**, as git's isolation is ([`crate::worktree::git::within`]): a
@@ -32,7 +33,8 @@ pub struct Tally {
     pub started: usize,
     /// Reads of the project's sandbox manifest ([`crate::sandbox::Plane::read`]).
     pub plane_reads: usize,
-    /// Reads of the sandbox's locks ([`crate::sandbox::policy::Locks::of`]).
+    /// Reads of the sandbox's locks ([`crate::sandbox::policy::Locks::of_plane`], and so
+    /// [`crate::sandbox::policy::Locks::of`]).
     pub locks_reads: usize,
     /// Times the work entered a door that carries the scope to its blocking thread
     /// ([`note_a_door`]): none means the work ran somewhere the scope never reached.

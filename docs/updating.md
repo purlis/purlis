@@ -470,7 +470,7 @@ them more easily. Re-set them from its runs before reading a green run there as 
 
 ### The budget run on the benchmark Mac
 
-`budget-run.yml` (the window and felt rows of the budgets of record, on main's push and nightly;
+`budget-run.yml` (the window and felt rows of the performance budgets of record, on main's push and nightly;
 ADR 0086, amended 2026-11-27) runs **only** where the repository variable `BUDGET_RUN_RUNNER`
 says, as `fromJSON(vars.BUDGET_RUN_RUNNER)`, and only when it names a self-hosted runner. There is
 no fallback: unset, the job is skipped, so its `macos-max` series never mixes two machines.
@@ -491,7 +491,8 @@ Each run's points are recorded on the `benchmarks` branch under `macos-max/` by 
 a GitHub-hosted runner: the data set `budget run (macos-max)` when the screen is the pinned mode
 (looks like 1920×1080, HiDPI, at 60 Hz: `PINNED_SCREEN` in `tools/budget-series.mjs`), and
 `budget run (macos-max, evidence)` when it is any other, such as the built-in panel before the
-HDMI dummy plug is in. The run's summary and its `budget-run` artifact say which, and the screen.
+HDMI dummy plug is in, a second display, or the plug's mode at 59.94 Hz: the rate is read to its
+hundredths, so the NTSC rate is not the pinned 60 Hz. The run's summary and its `budget-run` artifact say which, and the screen.
 
 ## Cutting a stable release
 

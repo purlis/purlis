@@ -14,21 +14,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-const read = (name) => readFileSync(new URL(`../.github/workflows/${name}`, import.meta.url), "utf8");
-const PUBLISHING = ["release.yml", "runner-image.yml", "operator-image.yml"];
+import { jobLines } from "./workflow-jobs.mjs";
 
-/** The jobs of a workflow's text, by name, each its lines with comments dropped. */
-function jobs(text) {
-  const lines = text.split("\n");
-  const out = new Map();
-  let current = null;
-  for (const line of lines.slice(lines.indexOf("jobs:") + 1)) {
-    if (/^\S/.test(line)) break;
-    if (/^ {2}[\w-]+:$/.test(line)) out.set((current = line.trim().slice(0, -1)), []);
-    else if (current && !line.trim().startsWith("#")) out.get(current).push(line);
-  }
-  return out;
-}
+const read = (name) => readFileSync(new URL(`../.github/workflows/${name}`, import.meta.url), "utf8");
+// `parity-fixture-images.yml` publishes too (#8009): it signs no provenance, so only the first
+// check reaches it, and its pins are its digests, checked by an anonymous pull.
+const PUBLISHING = ["release.yml", "runner-image.yml", "operator-image.yml", "parity-fixture-images.yml"];
+
+const jobs = (text) => jobLines(text);
 
 /** The top-level `on:` keys. */
 function triggers(text) {

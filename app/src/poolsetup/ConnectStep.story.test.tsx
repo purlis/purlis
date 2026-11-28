@@ -58,6 +58,7 @@ describe("pool setup's Connect stories", () => {
     );
     render(<composed.TheAddWasNotTaken />);
     const add = screen.getByRole("button", { name: "Trust and create the pool" });
+    await waitFor(() => expect(add).toBeEnabled());
     await userEvent.setup().click(add);
     await waitFor(() => expect(add).toHaveAttribute("aria-busy", "true"));
     expect(add).not.toBeDisabled();

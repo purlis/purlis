@@ -26,16 +26,14 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { median } from "./stress-bench.mjs";
+import { AT_LEAST, median } from "./stress-bench.mjs";
 
 /**
  * The benchmark Mac's screen, as the mac-farm bootstrap pins it on its HDMI dummy plug: "looks like
- * 1920×1080", HiDPI, at 60 Hz (#7730). In `screenMode`'s spelling.
+ * 1920×1080", HiDPI, at 60 Hz (#7730). In `screenMode`'s spelling, and matched whole: a 59.94 Hz
+ * mode, a second display or no HiDPI is another screen setup.
  */
 export const PINNED_SCREEN = "1920x1080 HiDPI @ 60 Hz";
-
-/** The fewest samples a point is the median of. */
-export const AT_LEAST = 2;
 
 /**
  * The budget rows the run records: the row, the bench spec (`app/e2e/bench/<spec>.bench.ts`, the
@@ -123,10 +121,17 @@ export function screenMode(text) {
       const width = d.looksWidth ?? d.width;
       const height = d.looksHeight ?? d.height;
       const hidpi = d.retina || d.width > width;
-      return `${width}x${height}${hidpi ? " HiDPI" : ""}${d.hz ? ` @ ${Math.round(Number(d.hz))} Hz` : ""}`;
+      return `${width}x${height}${hidpi ? " HiDPI" : ""}${d.hz ? ` @ ${hertz(d.hz)} Hz` : ""}`;
     })
     .join(" + ");
 }
+
+/**
+ * A refresh rate to its hundredths, `60.00` as `60` and `59.94` as `59.94`: never rounded to a
+ * whole hertz, so the NTSC rate is not taken for the pinned 60 Hz (#7944). A Mac that came up at
+ * 59.94 Hz is another screen setup, and its points are evidence.
+ */
+const hertz = (hz) => String(Math.round(Number(hz) * 100) / 100);
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const { values: o } = parseArgs({

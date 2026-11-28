@@ -86,7 +86,7 @@ const MOST_SAID: usize = 4096;
 
 /// How long a login that showed its page has to ask for the code, and one that was given a code
 /// has to answer it, before purlis says it cannot follow it: past these, it asks something else.
-const NEXT_WITHIN: Duration = Duration::from_secs(60);
+pub const NEXT_WITHIN: Duration = Duration::from_secs(60);
 
 /// The most typed into a terminal at once: a paste.
 const MOST_TYPED: usize = 64 * 1024;
@@ -187,6 +187,70 @@ impl Event {
     }
 }
 
+/// **The steps of one sign-in on a pool's runner, as the log times them** (#7939,
+/// [`purlis_session_protocol::steps::sign_in`]): from its start until its page is told
+/// ([`ADDRESS`]), then until the runner says it is signed in ([`DONE`]). Fed each [`Event`] its
+/// driver hears; a step it never heard the end of is `refused` when this goes, so a stall is in
+/// the log as the step it stalled in.
+///
+/// [`ADDRESS`]: purlis_session_protocol::steps::sign_in::ADDRESS
+/// [`DONE`]: purlis_session_protocol::steps::sign_in::DONE
+pub struct Timed {
+    pool: String,
+    address: Option<purlis_session_protocol::steps::Step>,
+    done: Option<purlis_session_protocol::steps::Step>,
+}
+
+impl Timed {
+    /// A sign-in on `pool` just started: `driven` where purlis reads its page, else in the
+    /// runner's terminal, which shows none here.
+    pub fn started(pool: &str, driven: bool) -> Self {
+        use purlis_session_protocol::steps::{begin_in, sign_in};
+        Self {
+            pool: pool.to_owned(),
+            address: driven.then(|| begin_in(sign_in::ADDRESS, pool)),
+            done: (!driven).then(|| begin_in(sign_in::DONE, pool)),
+        }
+    }
+
+    /// Its driver heard `event`.
+    pub fn heard(&mut self, event: &Event) {
+        use purlis_session_protocol::steps::{begin_in, sign_in};
+        match event {
+            Event::Open { .. } | Event::Approve { .. } | Event::DeviceCode { .. } => {
+                if let Some(address) = self.address.take() {
+                    address.done();
+                }
+                if self.done.is_none() {
+                    self.done = Some(begin_in(sign_in::DONE, &self.pool));
+                }
+            }
+            Event::SignedIn => {
+                if let Some(done) = self.done.take() {
+                    done.done();
+                }
+            }
+            Event::Cancelled => self.cancelled(),
+            // Over some other way: whichever step it was at is refused.
+            event if event.is_last() => {
+                self.address = None;
+                self.done = None;
+            }
+            _ => {}
+        }
+    }
+
+    /// The person cancelled it, at whichever step it was.
+    pub fn cancelled(&mut self) {
+        if let Some(address) = self.address.take() {
+            address.cancelled();
+        }
+        if let Some(done) = self.done.take() {
+            done.cancelled();
+        }
+    }
+}
+
 /// What a harness's login prints, and where its pages may be.
 struct Words {
     kind: &'static str,
@@ -194,8 +258,9 @@ struct Words {
     plan: Option<&'static str>,
     /// What comes right before its page's address on a line.
     page_after: &'static [&'static str],
-    /// Whether its page's address may be a line of its own.
-    page_alone: bool,
+    /// What a line ends with when its page's address is the next line printed, on its own: an
+    /// address alone anywhere else is passed over.
+    page_below: &'static [&'static str],
     /// The port it waits on for the browser's answer, for a login with nothing to paste, and
     /// the client its page must name.
     answered_on: Option<u16>,
@@ -230,7 +295,7 @@ const NO_WORDS: Words = Words {
     kind: "",
     plan: None,
     page_after: &[],
-    page_alone: false,
+    page_below: &[],
     answered_on: None,
     client: "",
     pasted_from: &[],
@@ -248,10 +313,12 @@ const NO_WORDS: Words = Words {
 /// Claude Code 2.1.314's `auth login`, by its own code: `If the browser didn't open, visit:`
 /// or `Sign in at:` before the page, `Paste code here` for the code, its refusals of a pasted
 /// code, and `Login failed:`. Its sign-in pages are its own code's three `authorize` pages.
+/// From 2.1.332 at least, its page is on a line of its own after those words (#7939).
 const CLAUDE: Words = Words {
     kind: "claude",
     plan: None,
     page_after: &["visit: ", "Sign in at: "],
+    page_below: &["visit:", "Sign in at:"],
     asks_code: "Paste code here",
     refuses: &["Invalid code", "That code is not from this sign-in"],
     fails: "Login failed: ",
@@ -301,7 +368,7 @@ const OPENAI_CLIENT: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 /// this URL to authenticate:`, then it waits on [`callback::PORT`], and `Error logging in:`.
 const CODEX: Words = Words {
     kind: "codex",
-    page_alone: true,
+    page_below: &["navigate to this URL to authenticate:"],
     answered_on: Some(callback::PORT),
     client: OPENAI_CLIENT,
     fails: "Error logging in: ",
@@ -329,6 +396,14 @@ const FOLLOWED: [&Words; 4] = [&CLAUDE, &OPENCODE_COPILOT, &CODEX, &OPENCODE_CHA
 /// long and random.
 const LEAST_STATE: usize = 16;
 const MOST_STATE: usize = 512;
+
+/// Whether a line read is all of it, or a part of one cut at [`MOST_PARTIAL`]: up to the cut,
+/// or what follows it up to its line break.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Whole {
+    Yes,
+    No,
+}
 
 /// Which of a login's outputs a piece was printed on: each is read in lines of its own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -371,6 +446,12 @@ pub struct Driven {
     failed: Option<String>,
     /// Its device page, once printed, until its code is.
     device_page: Option<String>,
+    /// Whether the last line it printed on each output ended with the words before a page on
+    /// the next ([`Words::page_below`]).
+    page_next: [bool; 2],
+    /// Whether the line now printed on each output was cut at [`MOST_PARTIAL`]: until its line
+    /// break, no part of it is whole.
+    cut: [bool; 2],
     /// Whether it said it signed in ([`Words::signed_in`]).
     said_signed_in: bool,
     /// Whether its one question ([`Words::chosen`]) was answered, and what to pass it now.
@@ -407,6 +488,8 @@ impl Driven {
             lines: Vec::new(),
             failed: None,
             device_page: None,
+            page_next: [false; 2],
+            cut: [false; 2],
             said_signed_in: false,
             answered: false,
             reply: None,
@@ -439,12 +522,18 @@ impl Driven {
             }
             if n > 0 {
                 let line = std::mem::take(&mut self.partial[at]);
-                self.take(&line, &mut said);
+                let whole = if std::mem::take(&mut self.cut[at]) {
+                    Whole::No
+                } else {
+                    Whole::Yes
+                };
+                self.take(&line, stream, whole, &mut said);
             }
             self.partial[at].push_str(piece);
             if self.partial[at].len() > MOST_PARTIAL {
                 let line = std::mem::take(&mut self.partial[at]);
-                self.take(&line, &mut said);
+                self.cut[at] = true;
+                self.take(&line, stream, Whole::No, &mut said);
             }
         }
         // A prompt ends with no line break.
@@ -464,10 +553,10 @@ impl Driven {
         self.reply.take()
     }
 
-    /// One whole line the login printed: read for its step, and kept, cut to [`MOST_LINE`].
-    fn take(&mut self, line: &str, said: &mut Vec<Event>) {
+    /// One line the login printed on `stream`: read for its step, and kept, cut to [`MOST_LINE`].
+    fn take(&mut self, line: &str, stream: Stream, whole: Whole, said: &mut Vec<Event>) {
         let line = last_drawn(line);
-        self.line(&line, said);
+        self.line(&line, stream, whole, said);
         if !line.is_empty() {
             self.lines.push(cut(&line, MOST_LINE));
             if self.lines.len() > KEPT_LINES {
@@ -476,7 +565,7 @@ impl Driven {
         }
     }
 
-    fn line(&mut self, line: &str, said: &mut Vec<Event>) {
+    fn line(&mut self, line: &str, stream: Stream, whole: Whole, said: &mut Vec<Event>) {
         if self.at == At::Over {
             return;
         }
@@ -493,28 +582,33 @@ impl Driven {
         }
         match self.at {
             At::Starting => {
-                if !words.chosen.is_empty() && !self.answered && line.contains(words.chosen) {
+                // Only the line right after the words before a page, on the same output, may be
+                // one on its own; the blank lines between them are no line at all. A line cut at
+                // [`MOST_PARTIAL`] is no page: what is left of it may be one cut short.
+                let next = &mut self.page_next[stream as usize];
+                let alone = !line.is_empty() && std::mem::take(next);
+                let whole = whole == Whole::Yes;
+                if whole && words.page_below.iter().any(|end| line.ends_with(end)) {
+                    *next = true;
+                }
+                if whole && alone && line.starts_with("https://") {
+                    // Where its page goes: one that is not its page cannot be followed, said at
+                    // once. An address alone anywhere else is passed over, and ends nothing.
+                    match self.page(line) {
+                        Some(url) => self.opened(url, line, said),
+                        None => self.lost(line, said),
+                    }
+                } else if !words.chosen.is_empty() && !self.answered && line.contains(words.chosen)
+                {
                     self.answered = true;
                     // Its prompt takes Return as a terminal sends it: a line break is not read.
                     self.reply = Some("\r");
                 } else if let Some(code) = self.code_on(line) {
                     let code = code.to_owned();
                     self.device_code(code, line, said);
-                } else if let Some(address) = self.page_on(line) {
+                } else if let Some(address) = self.page_on(line).filter(|_| whole) {
                     match self.page(address) {
-                        // Its page as purlis spells it, from its own host and path alone: nothing the
-                        // login wrote after them is opened.
-                        Some(url) if !words.code_after.is_empty() => {
-                            let page = url.split(['?', '#']).next().unwrap_or_default().to_owned();
-                            self.device_page.get_or_insert(page);
-                        }
-                        Some(url) => match self.step_at(url) {
-                            Some((at, step)) => {
-                                self.came_to(at);
-                                said.push(step);
-                            }
-                            None => self.lost(line, said),
-                        },
+                        Some(url) => self.opened(url, line, said),
                         None => self.lost(line, said),
                     }
                 }
@@ -577,15 +671,27 @@ impl Driven {
         Some((At::Approving, Event::Approve { url, port, state }))
     }
 
+    /// Its page `url`, printed on `line`, is shown: a device page is kept for its code, and any
+    /// other is the step it is at, where it is one purlis can follow.
+    fn opened(&mut self, url: String, line: &str, said: &mut Vec<Event>) {
+        if !self.words.code_after.is_empty() {
+            // Its page as purlis spells it, from its own host and path alone: nothing the login
+            // wrote after them is opened.
+            let page = url.split(['?', '#']).next().unwrap_or_default().to_owned();
+            self.device_page.get_or_insert(page);
+            return;
+        }
+        match self.step_at(url) {
+            Some((at, step)) => {
+                self.came_to(at);
+                said.push(step);
+            }
+            None => self.lost(line, said),
+        }
+    }
+
     /// The address after one of the words before a page, on `line`.
     fn page_on<'a>(&self, line: &'a str) -> Option<&'a str> {
-        let alone = |host: &&(&str, &str)| {
-            line.strip_prefix("https://")
-                .is_some_and(|rest| rest.starts_with(host.0))
-        };
-        if self.words.page_alone && self.words.pages.iter().any(|page| alone(&page)) {
-            return Some(line);
-        }
         self.words.page_after.iter().find_map(|before| {
             let (_, after) = line.split_once(before)?;
             after.split_whitespace().next()

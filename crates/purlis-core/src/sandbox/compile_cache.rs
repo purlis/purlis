@@ -18,11 +18,13 @@
 //!
 //! **Only the chat's sandboxed commands are pointed at it, never its harness** ([`script`]).
 //! The variables go in the file Claude Code reads before each of its Bash commands
-//! (`CLAUDE_ENV_FILE`), which its sandbox runs, and never in the harness's own environment. A
-//! program the harness starts outside its sandbox (a hook, a language server) never learns the
-//! socket, so it never starts an sccache server there that the chat's commands would then reach,
-//! and through which they would run a compiler outside the sandbox. The server a chat reaches is
-//! one its own commands started, inside its sandbox. The same file drops every other `SCCACHE_*`
+//! (`CLAUDE_ENV_FILE`), and never in the harness's own environment. A program the harness starts
+//! outside its sandbox (a hook, a language server) never learns the socket, so it never starts an
+//! sccache server there that the chat's commands would then reach, and through which they would
+//! run a compiler outside the sandbox. Claude Code reads that file before a command the person
+//! runs with `!` too, outside its sandbox, so the file hands the cache and starts the server only
+//! where it finds itself inside the chat's sandbox (#7935). The server a chat reaches is one its
+//! own commands started, inside its sandbox. The same file drops every other `SCCACHE_*`
 //! variable the chat inherited, and points `SCCACHE_CONF` at an empty file purlis writes
 //! ([`CONF`]), so a chat never reaches the person's team cache (a bucket, redis, memcached) nor a
 //! distributed-compile scheduler: its cache is the local folder alone.
@@ -42,7 +44,9 @@
 //! unsandboxed sccache among them. A chat that reached that one would have its compiles run
 //! outside its sandbox. So purlis points the client at a unix socket in the chat's own temp folder
 //! (`SCCACHE_SERVER_UDS`), and lets the chat bind and connect to that one path. No loopback port is
-//! opened, and no chat reaches another chat's server.
+//! opened, and no chat reaches another chat's server. The file the chat's commands read starts
+//! that server itself, inside the sandbox, where none answers on the socket ([`script`], #7935):
+//! sccache's own start binds a second socket the sandbox refuses.
 //!
 //! **Where purlis can grant it.** A Claude Code chat on macOS at the full sandbox, whose sandbox
 //! grants a socket by path (`network.allowUnixSockets`) and which reads the file before each
@@ -221,25 +225,105 @@ pub fn owned_as_a_program(_real: &Path) -> bool {
     false
 }
 
+/// The name of the log the chat's own server writes, beside its socket ([`script`]).
+pub const LOG: &str = "sccache.log";
+
+/// The mark a start that never answered leaves beside the socket ([`script`]): later commands
+/// start the server again without waiting for it, until one answers.
+pub const NOT_STARTED: &str = "sccache.not-started";
+
+/// How many times, a tenth of a second apart, a command waits for the server it started to
+/// answer on its socket ([`script`]) before it goes on without it.
+pub const WAITS: u32 = 50;
+
 /// What the file Claude Code reads before each of the chat's commands says for the compile
 /// cache: every `SCCACHE_*` variable the command inherited dropped, then the wrapper `program`,
 /// the cache's folder, its config and the chat's own server's `socket` set. Read by the chat's
 /// sandboxed commands alone, never by its harness ([`self`]).
+///
+/// **Only inside the chat's sandbox** (#7935). Claude Code reads the file before a command the
+/// person runs with `!` too, and runs that one outside its sandbox. A server started there would
+/// run every later compile of the chat's outside the sandbox, and a chat can bring that about:
+/// stop its server, and wait for the next `!`. So the file first asks whether a write to the
+/// cache's config ([`Declared::conf`]) is refused with "Operation not permitted", as the chat's
+/// profile refuses it and nothing outside the sandbox does (the person owns the file, and the
+/// write sets its times to what they are). Outside, or where the config is not there, it hands
+/// nothing and starts nothing. Nor where the wrapper is not there to run (`brew upgrade` takes
+/// away the Cellar path a chat was handed): its builds then go unwrapped.
+///
+/// **Then the chat's own server, started by the command where none answers** (#7935).
+/// sccache's client starts a missing server itself, and first binds a socket at a random path
+/// in `$TMPDIR` that the server reports back on: the sandbox lets the chat bind its one socket
+/// and no other, so that start fails with "Operation not permitted", and so does every compile.
+/// A server started in the foreground (`SCCACHE_NO_DAEMON`) reports on no socket, so the file
+/// starts one that way, in the background, inside the chat's sandbox, and waits until it
+/// answers. None is started where one answers already. **A server that stopped leaves its socket
+/// behind** (once idle for its timeout, or stopped, or killed), and a client that finds the file
+/// but no server falls back on its own start: so whether one is there is asked of the socket
+/// (`nc -U`, given a second, and asked again where a socket is there), never of the file, and a
+/// socket nothing answers on is taken away before the start. The server writes what it reports
+/// in [`LOG`], beside its socket. Nothing is started, written or removed where the socket's
+/// folder, the log or the mark below is a link: a chat could plant one to another chat's folder,
+/// or to a file of the person's.
+///
+/// The server is its own session (`setsid`, through the system's `perl`), so a command that is
+/// interrupted does not take it down, and zsh does not lower its priority as a background job's
+/// (`BG_NICE`). **A server that does not answer holds up one command**, for [`WAITS`] tenths of a
+/// second, and leaves [`NOT_STARTED`] beside its socket: later commands start it again without
+/// waiting, and the first to find one answering takes the mark away.
+///
+/// Two commands that start at once may each start one: the later takes the socket, and the
+/// earlier, which nothing reaches any more, ends at its idle timeout. Either runs inside the
+/// chat's sandbox, on the chat's one socket and its one cache folder, so nothing is loosened.
 pub fn script(program: &Path, declared: &Declared, socket: &Path) -> String {
     let quoted = |path: &Path| super::tunnel::sh_quoted(&path.display().to_string());
+    let folder = quoted(socket.parent().unwrap_or(socket));
+    let log = quoted(&socket.with_file_name(LOG));
+    let mark = quoted(&socket.with_file_name(NOT_STARTED));
+    let conf = quoted(&declared.conf);
+    let program = quoted(program);
+    let answers = "/usr/bin/nc -w 1 -U \"$SCCACHE_SERVER_UDS\" </dev/null >/dev/null 2>&1";
     format!(
         "# The project's compile cache (Q324): rustc through sccache, its server this chat's own.\n\
-         for purlis_sccache_var in $(env | sed -n 's/^\\(SCCACHE_[A-Za-z0-9_]*\\)=.*/\\1/p'); do \
+         # Only inside the chat's sandbox (#7935): a command the person runs with `!` reads this\n\
+         # file too, unsandboxed. The sandbox alone refuses a write to the config, with EPERM.\n\
+         case $(LC_ALL=C /usr/bin/touch -c -r {conf} {conf} 2>&1) in\n\
+         *'Operation not permitted'*) purlis_sccache_inside=1 ;;\n\
+         *) purlis_sccache_inside= ;;\n\
+         esac\n\
+         if [ -n \"$purlis_sccache_inside\" ] && [ -x {program} ]; then\n\
+         for purlis_sccache_var in $(/usr/bin/env | /usr/bin/sed -n 's/^\\(SCCACHE_[A-Za-z0-9_]*\\)=.*/\\1/p'); do \
          unset \"$purlis_sccache_var\"; done\n\
          unset purlis_sccache_var\n\
-         RUSTC_WRAPPER={}\n\
-         SCCACHE_DIR={}\n\
-         SCCACHE_CONF={}\n\
-         SCCACHE_SERVER_UDS={}\n\
-         export RUSTC_WRAPPER SCCACHE_DIR SCCACHE_CONF SCCACHE_SERVER_UDS\n",
-        quoted(program),
-        quoted(&declared.dir),
-        quoted(&declared.conf),
-        quoted(socket),
+         RUSTC_WRAPPER={program}\n\
+         SCCACHE_DIR={dir}\n\
+         SCCACHE_CONF={conf}\n\
+         SCCACHE_SERVER_UDS={socket}\n\
+         export RUSTC_WRAPPER SCCACHE_DIR SCCACHE_CONF SCCACHE_SERVER_UDS\n\
+         # Its server, started here where none answers (#7935): sccache's own start binds a\n\
+         # socket the sandbox refuses. A stopped server leaves its socket, so ask the socket.\n\
+         # Never through a link planted in the chat's temp folder.\n\
+         if [ ! -L {folder} ] && [ ! -L {log} ] && [ ! -L {mark} ]; then\n\
+         \x20 if {answers} || {{ [ -S \"$SCCACHE_SERVER_UDS\" ] && /bin/sleep 0.2 && {answers}; }}; then\n\
+         \x20   [ -e {mark} ] && /bin/rm -f {mark}\n\
+         \x20 else\n\
+         \x20   [ -S \"$SCCACHE_SERVER_UDS\" ] && /bin/rm -f \"$SCCACHE_SERVER_UDS\"\n\
+         \x20   (setopt no_bg_nice 2>/dev/null; SCCACHE_START_SERVER=1 SCCACHE_NO_DAEMON=1 \
+         /usr/bin/perl -MPOSIX -e 'POSIX::setsid(); exec {{ $ARGV[0] }} @ARGV or exit 127' \"$RUSTC_WRAPPER\" \
+         </dev/null >/dev/null 2>>{log} &) 2>/dev/null\n\
+         \x20   if [ ! -e {mark} ]; then\n\
+         \x20     purlis_sccache_wait=0\n\
+         \x20     until {answers} || [ \"$purlis_sccache_wait\" -ge {WAITS} ]; do\n\
+         \x20       /bin/sleep 0.1; purlis_sccache_wait=$((purlis_sccache_wait + 1))\n\
+         \x20     done\n\
+         \x20     unset purlis_sccache_wait\n\
+         \x20     {answers} || : >{mark}\n\
+         \x20   fi\n\
+         \x20 fi\n\
+         fi\n\
+         fi\n\
+         unset purlis_sccache_inside\n",
+        dir = quoted(&declared.dir),
+        socket = quoted(socket),
     )
 }

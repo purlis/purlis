@@ -930,22 +930,29 @@ impl SshRoute {
             folders.join(":"),
             more.unwrap_or_default()
         );
-        let file = self.dir.join(CLAUDE_ENV_NAME);
-        // Written beside, then moved into place, so a command starting now reads a whole file.
-        let beside = self
-            .dir
-            .join(format!("{CLAUDE_ENV_NAME}.purlis-{}", std::process::id()));
-        std::fs::write(&beside, text)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&beside, std::fs::Permissions::from_mode(0o600))?;
-        }
-        std::fs::rename(&beside, &file).inspect_err(|_| {
-            let _ = std::fs::remove_file(&beside);
-        })?;
-        Ok(file)
+        write_claude_env_in(&self.dir, &text)
     }
+}
+
+/// **The file Claude Code reads before each command** (`CLAUDE_ENV_FILE`), saying `text`,
+/// written in `dir`, a folder no chat writes: beside a chat's ssh route
+/// ([`SshRoute::write_claude_env`]), or, for a chat that has none, in the folder its route would
+/// have been written in ([`routed_in`]), for what its sandboxed commands alone are handed, such
+/// as the project's compile cache (#7935). Written beside, then moved into place, so a command
+/// starting now reads a whole file; the person's alone.
+pub fn write_claude_env_in(dir: &Path, text: &str) -> io::Result<PathBuf> {
+    let file = dir.join(CLAUDE_ENV_NAME);
+    let beside = dir.join(format!("{CLAUDE_ENV_NAME}.purlis-{}", std::process::id()));
+    std::fs::write(&beside, text)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&beside, std::fs::Permissions::from_mode(0o600))?;
+    }
+    std::fs::rename(&beside, &file).inspect_err(|_| {
+        let _ = std::fs::remove_file(&beside);
+    })?;
+    Ok(file)
 }
 
 /// The name of a route's file Claude Code reads before each command ([`SshRoute::write_claude_env`]).
@@ -997,12 +1004,18 @@ pub fn routed_in(
     socks: u16,
     program: Option<&Path>,
 ) -> io::Result<(tempfile::TempDir, SshRoute)> {
-    make_own_folder(within)?;
-    let dir = tempfile::Builder::new()
-        .prefix(&format!("{ROUTE_PREFIX}{}-", std::process::id()))
-        .tempdir_in(within)?;
+    let dir = route_folder_in(within)?;
     let route = SshRoute::write(dir.path(), socks, program)?;
     Ok((dir, route))
+}
+
+/// **The folder of its own a chat's route is written in** ([`routed_in`]), inside `within`,
+/// made the person's alone if missing, and named as [`routed_in`] says; nothing written in it.
+pub fn route_folder_in(within: &Path) -> io::Result<tempfile::TempDir> {
+    make_own_folder(within)?;
+    tempfile::Builder::new()
+        .prefix(&format!("{ROUTE_PREFIX}{}-", std::process::id()))
+        .tempdir_in(within)
 }
 
 /// The start of a route folder's name: `chat-`, then the pid of the process that made it.

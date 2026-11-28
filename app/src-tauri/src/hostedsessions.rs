@@ -143,6 +143,11 @@ pub(crate) const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 /// What a command no host answered in time says.
 const NOT_IN_TIME: &str = "the session host did not answer in time";
 
+/// The names the host's two deadlines go by in the diagnostic log where they expire
+/// ([`purlis_core::applog::expired`], FS-M1a #7893): its link's readiness, and its answer.
+const HOST_LINK: &str = "the session host's link";
+const HOST_ANSWER: &str = "the session host's answer";
+
 /// What a call the host did not carry out comes to: the host's own refusal where it gave one,
 /// else what went wrong on the link, in this window's words.
 fn refusal_of(
@@ -1040,6 +1045,7 @@ impl Connection {
             }
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
+                purlis_core::applog::expired(HOST_LINK, within);
                 return Err(no_host("the session host did not answer in time"));
             }
             state = self
@@ -1625,6 +1631,12 @@ pub(crate) enum Reconnect {
     Over,
     /// The view the host numbers so drew a snapshot: a first one or a new one, which the host
     /// opens only while the link to the runner is up.
+    ///
+    /// Raised when the snapshot comes, not when its first frame is handed over (#7979 item 4,
+    /// decided in #8011): a frame that is held, over 4 MB, unreadable or not a JPEG still leaves
+    /// a view that is linked, and waiting for one would keep it reading Reconnecting, a link
+    /// fault it does not have and that never clears for a page that does not change (ADR 0076's
+    /// named causes). A frame that is not handed over is a fault of its own, if it is ever told.
     Drawn(u32),
     /// The host says the runner answered with another key than the one pinned for it
     /// (`key_changed`, #2752): it does not link to it again until it is removed and added anew.
@@ -1942,7 +1954,10 @@ impl HostLink {
             let why = match tokio::time::timeout(at_most, client.call(command)).await {
                 Ok(Ok(_)) => None,
                 Ok(Err(why)) => Some(refusal_of(&why).why),
-                Err(_) => Some(NOT_IN_TIME.to_owned()),
+                Err(_) => {
+                    purlis_core::applog::expired(HOST_ANSWER, at_most);
+                    Some(NOT_IN_TIME.to_owned())
+                }
             };
             if let Some(why) = why {
                 unanswered(why);
@@ -1986,7 +2001,10 @@ impl HostLink {
         });
         match answer.recv_timeout(within) {
             Ok(answered) => Some(answered.map_err(|why| refusal_of(&why))),
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                purlis_core::applog::expired(HOST_ANSWER, within);
+                None
+            }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 Some(Err(purlis_session_protocol::session::Refusal {
                     code: String::new(),
@@ -2043,6 +2061,7 @@ impl HostLink {
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout)
                     if until.is_some_and(|until| Instant::now() >= until) =>
                 {
+                    purlis_core::applog::expired(HOST_ANSWER, within.unwrap_or_default());
                     return Err(Unanswered::Here(NOT_IN_TIME.to_owned()));
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}

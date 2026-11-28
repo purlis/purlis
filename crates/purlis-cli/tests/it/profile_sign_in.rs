@@ -592,7 +592,11 @@ fn a_held_login_that_waits_for_the_browser_is_noted_while_it_runs() {
     stand_in::program(
         &machine.path("bin"),
         "codex",
-        &format!("#!/bin/sh\necho '{page}'\nexec sleep 60\n"),
+        // As Codex prints it: the words before its page, then its page on a line of its own.
+        &format!(
+            "#!/bin/sh\necho 'If your browser did not open, navigate to this URL to \
+             authenticate:'\necho '{page}'\nexec sleep 60\n"
+        ),
     );
 
     let mut held = machine
@@ -603,10 +607,10 @@ fn a_held_login_that_waits_for_the_browser_is_noted_while_it_runs() {
         .spawn()
         .expect("the binary runs");
     let input = held.stdin.take();
-    let mut line = String::new();
-    std::io::BufReader::new(held.stdout.take().expect("its output"))
-        .read_line(&mut line)
-        .unwrap();
+    let mut printed = std::io::BufReader::new(held.stdout.take().expect("its output"));
+    let (mut words, mut line) = (String::new(), String::new());
+    printed.read_line(&mut words).unwrap();
+    printed.read_line(&mut line).unwrap();
 
     assert_eq!(line.trim_end(), page, "its page passes on");
     assert_eq!(machine.waiting(), 1);

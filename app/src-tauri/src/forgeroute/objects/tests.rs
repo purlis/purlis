@@ -545,3 +545,28 @@ mod through_the_policy {
         ));
     }
 }
+
+#[test]
+fn an_issue_named_by_its_numeric_id_is_asked_about_in_the_form_the_route_sends() {
+    // `05:Issue<id>` in base64 (#8022): the forge route places a REST body's issue id this way,
+    // padded or not.
+    let lookup = Answers::of(&[
+        ("MDU6SXNzdWU2NjYxODE5MDcy", Ok(Some("acme/widgets"))),
+        ("MDU6SXNzdWUxMg==", Ok(Some("someone/else"))),
+    ]);
+    let objects = run(lookup.clone());
+
+    assert_eq!(
+        objects
+            .repo_of(Kind::GitHub, "github.com", "MDU6SXNzdWU2NjYxODE5MDcy")
+            .as_deref(),
+        Some("acme/widgets")
+    );
+    assert_eq!(
+        objects
+            .repo_of(Kind::GitHub, "github.com", "MDU6SXNzdWUxMg==")
+            .as_deref(),
+        Some("someone/else")
+    );
+    assert_eq!(lookup.asked.load(Ordering::SeqCst), 2);
+}

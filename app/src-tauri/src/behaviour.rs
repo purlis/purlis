@@ -361,7 +361,7 @@ const DOCKER_POOL_IMAGE: &str = "DOCKER_POOL_TEST_IMAGE";
 /// so an image that went missing never passes as nothing run.
 const PARITY: &str = "PURLIS_PARITY";
 
-pub(crate) mod fault_suite;
+mod fault_suite;
 #[path = "behaviour/tests/fresh_runner.rs"]
 mod fresh_runner;
 #[path = "behaviour/tests/on_a_cluster_pool.rs"]
@@ -371,7 +371,116 @@ mod pool_setup;
 mod pool_setup_try;
 mod remote_logins;
 mod runs_on_order;
-pub(crate) mod ssh_reconnect;
+mod ssh_reconnect;
+
+// What the fault suite's browser cases wait on and with, here and not in `fault_suite` so the
+// window's own tests can run them against the stand-in host (#7955, #7979) while the suite's
+// internals stay its own.
+
+/// Waits up to `within` for `done`, asking every 20 ms so a short dim is not missed.
+pub(crate) fn until_within(within: Duration, what: &str, done: impl Fn() -> bool) {
+    let deadline = Instant::now() + within;
+    while !done() {
+        assert!(Instant::now() < deadline, "{what}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// What a view of `program` was told of its link, in order, and how many frames it drew.
+pub(crate) struct Viewed {
+    told: Arc<Mutex<Vec<(Instant, crate::reconnecting::Reconnection)>>>,
+    frames: Arc<Mutex<Vec<Instant>>>,
+    /// When it was opened.
+    since: Instant,
+    /// Whether it was told it ended for good: an empty frame.
+    ended: Arc<std::sync::atomic::AtomicBool>,
+    watching: crate::browsers::BrowserWatching,
+}
+
+impl Viewed {
+    pub(crate) fn told_since(&self, since: Instant) -> Vec<crate::reconnecting::Reconnection> {
+        self.told
+            .lock()
+            .expect("what was told")
+            .iter()
+            .filter(|(at, _)| *at >= since)
+            .map(|(_, said)| *said)
+            .collect()
+    }
+
+    pub(crate) fn ended(&self) -> bool {
+        self.ended.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// What it was told since it was opened.
+    pub(crate) fn told_since_opened(&self) -> Vec<crate::reconnecting::Reconnection> {
+        self.told_since(self.since)
+    }
+
+    /// Whether it drew a frame at all. Its first can come before `watch` answers, while the
+    /// window asks the host who drives it, so no moment taken after is the one to count from.
+    pub(crate) fn drew_a_frame(&self) -> bool {
+        !self.frames.lock().expect("the frames").is_empty()
+    }
+
+    /// Whether it drew a frame since it was last told Reconnected (#7955). A stream drawn
+    /// again tells Reconnected with its first frame, before the frame is handed over, and a page
+    /// that does not change draws nothing after it: counted from when the view was told, not
+    /// from when a caller noticed, that frame is not missed.
+    pub(crate) fn drew_again(&self) -> bool {
+        let back = self
+            .told
+            .lock()
+            .expect("what was told")
+            .iter()
+            .rev()
+            .find(|(_, said)| *said == crate::reconnecting::Reconnection::Reconnected)
+            .map(|(at, _)| *at);
+        back.is_some_and(|back| {
+            self.frames
+                .lock()
+                .expect("the frames")
+                .iter()
+                .any(|at| *at >= back)
+        })
+    }
+}
+
+/// A focused view of `program`, as the window draws one.
+pub(crate) fn a_view_of(browsers: &crate::browsers::WindowBrowsers, program: &str) -> Viewed {
+    let told: Arc<Mutex<Vec<(Instant, crate::reconnecting::Reconnection)>>> = Arc::default();
+    let frames: Arc<Mutex<Vec<Instant>>> = Arc::default();
+    let ended: Arc<std::sync::atomic::AtomicBool> = Arc::default();
+    let (telling, drawing, ending) = (Arc::clone(&told), Arc::clone(&frames), Arc::clone(&ended));
+    let watching = browsers
+        .watch(
+            program,
+            crate::browsers::BrowserViewRole::Focused,
+            Box::new(move |_aim, image| {
+                if image.is_empty() {
+                    ending.store(true, std::sync::atomic::Ordering::SeqCst);
+                } else {
+                    drawing.lock().expect("the frames").push(Instant::now());
+                }
+            }),
+            Box::new(|_| {}),
+            Box::new(|_| {}),
+            Arc::new(move |said| {
+                telling
+                    .lock()
+                    .expect("what was told")
+                    .push((Instant::now(), said));
+            }),
+        )
+        .expect("the browser is viewed");
+    Viewed {
+        since: Instant::now(),
+        told,
+        frames,
+        ended,
+        watching,
+    }
+}
 
 /// **A chat on a Docker pool's runner** (#2045, spec #2041): a pool added on this machine as
 /// the window adds one ([`a_pool_on`]). The window speaks to its own host, which relays to the
