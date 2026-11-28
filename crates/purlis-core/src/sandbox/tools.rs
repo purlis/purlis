@@ -2871,6 +2871,27 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "konsole",
     "zellij",
     "byobu",
+    // The remote and VM runners and the agents and configuration runners #7964 names,
+    // refused whole on what each is for: `lima` and `multipass exec` run a command in a VM
+    // and `orbctl run` in OrbStack's; `pssh`, `pdsh` and `clush` run one on the hosts they
+    // are named; `chef-client` and `chef-solo` run a cookbook's recipes, CFEngine's
+    // `cf-agent` (`cfagent`) a policy's commands, `buildkite-agent` a pipeline's steps,
+    // Concourse's `fly execute` a task (fly.io's `fly` loses its Allow with it), `drone
+    // exec` a pipeline and `garden` a project's actions.
+    "lima",
+    "multipass",
+    "orbctl",
+    "pssh",
+    "pdsh",
+    "clush",
+    "chef-client",
+    "chef-solo",
+    "cf-agent",
+    "cfagent",
+    "buildkite-agent",
+    "fly",
+    "drone",
+    "garden",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

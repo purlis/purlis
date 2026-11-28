@@ -4069,3 +4069,31 @@ fn the_terminals_and_multiplexers_of_7964_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The remote and VM runners and the agents and configuration runners #7964 names, each of
+/// which runs the command, the recipe or the pipeline it is handed: `lima` and `multipass exec`
+/// in a VM, `orbctl run` in OrbStack's, and `pssh`, `pdsh` and `clush` on the hosts they are
+/// named; `chef-client` and `chef-solo` a cookbook's recipes, CFEngine's `cf-agent` (`cfagent`)
+/// a policy's commands, `buildkite-agent` a pipeline's steps, Concourse's `fly execute` a task,
+/// `drone exec` a pipeline, and `garden` a project's actions.
+#[test]
+fn the_remote_runners_agents_and_configuration_runners_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "lima",
+        "multipass",
+        "orbctl",
+        "pssh",
+        "pdsh",
+        "clush",
+        "chef-client",
+        "chef-solo",
+        "cf-agent",
+        "cfagent",
+        "buildkite-agent",
+        "fly",
+        "drone",
+        "garden",
+    ] {
+        refused_as_running_others(name);
+    }
+}
