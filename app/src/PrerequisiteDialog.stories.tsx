@@ -6,7 +6,9 @@
  * as an alert of the dialog family, under Waiting and Broken, with a foreign seal key, on a linked
  * page, and the Notice an Accept leaves. Each is drawn, held to axe, walked by the keyboard and
  * compared with its baseline in Chromium and WebKit; the baselines are drawn by the pull
- * request's `stories` run only. The core is faked at its command boundary.
+ * request's `stories` run only, and Chromium's only when that run has the `update-baselines`
+ * label (the ready gate runs WebKit alone on a pull request). The core is faked at its command
+ * boundary.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
