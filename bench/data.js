@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795852581556,
+  "lastUpdate": 1795857747523,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58674,6 +58674,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6093095,
             "unit": "ms",
             "extra": "median of 5 runs: 100.857, 100.980, 101.609, 101.964, 102.316 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f10c2cf7f91c590b398010597c17d3d4d601c052",
+          "message": "FS-M1a: answer spans at the existing seam (#7893) (#7984)\n\n* FS-M1a: answer spans at the existing seam (#7893), work in progress\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8FPXS8WST219JT7W5K7D1R8\nPurlis-Persona: steward\n\n* FS-M1a review: the log unchanged inside an answer, the updater's summary, a bounded summary line (#7893)\n\nThe fmt layers are filtered to events alone, so an event inside an answer span\nprints as before, with no scope, and no span fields are formatted. The Windows\nupdater's exit writes the last summary. at_exit says what is lost. A summary\nholds the 50 commands that answered most. The histograms are keyed without\nallocating under the lock. The writer's failure is logged after install. The\ncosts rule counts a bare answer( as the door.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8G3K7D67RVTGBMWHJWJ6GPP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T08:34:12Z",
+          "tree_id": "f5b2faa9b35a338cc8acb7fa02b02beb7055311a",
+          "url": "https://github.com/purlis/purlis/commit/f10c2cf7f91c590b398010597c17d3d4d601c052"
+        },
+        "date": 1795857737345,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.36151750000000005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.359, 0.360, 0.362, 0.369, 0.373 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.334282,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.214, 16.258, 16.334, 16.349, 16.424 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9144515,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.115, 101.896, 101.914, 102.055, 102.071 ms"
           }
         ]
       }
