@@ -3262,6 +3262,14 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "kata-runtime",
     "cloud-hypervisor",
     "bhyve",
+    // The interpreters and installers #8031 names, refused on this list and not on REFUSED_NAMES,
+    // as #7964's runtimes are: Gerbil's compiler `gxc` runs a module's macros as it compiles it,
+    // as `gxi` runs its code; CHICKEN's `chicken-install` runs an egg's setup as it installs it,
+    // as `csi` runs Scheme; and Hy's `hy` runs the Lisp it is handed as Python. `hy` is a short
+    // row, so it reaches every `hy-<word>`, `<word>-hy` and `ghy` as well.
+    "gxc",
+    "chicken-install",
+    "hy",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

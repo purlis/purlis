@@ -4515,3 +4515,13 @@ fn the_vm_and_sandbox_runners_of_8031_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The interpreters and installers #8031 names, each of which runs code it is handed: Gerbil's
+/// compiler `gxc`, whose macros run as it compiles, CHICKEN's `chicken-install`, which runs an
+/// egg's setup as it installs it, and Hy's `hy`, a Lisp that runs as Python.
+#[test]
+fn the_interpreters_and_installers_of_8031_are_offered_no_run_grant() {
+    for name in ["gxc", "chicken-install", "hy"] {
+        refused_as_running_others(name);
+    }
+}
