@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795860221135,
+  "lastUpdate": 1795861158295,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58842,6 +58842,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8548225,
             "unit": "ms",
             "extra": "median of 5 runs: 100.713, 101.082, 101.855, 101.968, 103.101 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d4d170e5d3d54421c135dc1c588938cf3ff5e609",
+          "message": "Pool setup: Trust and create the pool waits for the runner image (#7871) (#8028)\n\n* Pool setup: Trust and create the pool waits for the runner image (#7871)\n\nPressed before the image this build offers was read, it said the build\nnamed no runner image and made nothing. The button now stays unavailable,\nand a line says so, until the offer has arrived or is known absent;\nTrust this machine only works throughout.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GKGM2NZR2D4DWSRVMKHXXF\nPurlis-Persona: steward\n\n* Pool setup: an image that could not be read says why, never that the build names none (#7871)\n\nFrom the review: a failed read took the same path as a build naming no\nimage. The waiting line is now a Busy line, with its ellipsis\n(docs/ui-copy.md), and the flag is named readingImage.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GKGM2NZR2D4DWSRVMKHXXF\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T09:24:18Z",
+          "tree_id": "d5e8317ab4cbd2bf85641588d6c9ea11dc5ee0fd",
+          "url": "https://github.com/purlis/purlis/commit/d4d170e5d3d54421c135dc1c588938cf3ff5e609"
+        },
+        "date": 1795861146171,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3471475,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.306, 0.339, 0.347, 0.348, 0.353 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7284365,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.363, 16.436, 16.728, 16.740, 16.808 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.3640295,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.130, 101.200, 101.364, 102.338, 102.818 ms"
           }
         ]
       }
