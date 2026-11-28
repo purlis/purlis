@@ -4126,3 +4126,43 @@ fn the_cron_daemons_and_runners_of_7964_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The interpreters and runtimes #7964 names beside REFUSED_NAMES' own, each of which runs the
+/// code, the script or the module it is handed: `kotlin`, `scala`, `groovy`, `clojure`, `boot`,
+/// `elixir`, `erl`, `escript`, `ghc -e` (and Template Haskell in any build), `runghc`,
+/// `crystal`, `nim`, `v`, `dart`, `tcc -run`, `mono`, the WebAssembly runtimes `wasmtime`,
+/// `wasmer` and `wasm3`, the JavaScript engines `qjs`, `jsc`, `d8`, `hermes`, `rhino` and
+/// `jjs`, and `frida`, which spawns the program it is named and runs a script in it.
+#[test]
+fn the_interpreters_and_runtimes_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "kotlin",
+        "scala",
+        "groovy",
+        "clojure",
+        "boot",
+        "elixir",
+        "erl",
+        "escript",
+        "ghc",
+        "runghc",
+        "crystal",
+        "nim",
+        "v",
+        "dart",
+        "tcc",
+        "mono",
+        "wasmtime",
+        "wasmer",
+        "wasm3",
+        "qjs",
+        "jsc",
+        "d8",
+        "hermes",
+        "rhino",
+        "jjs",
+        "frida",
+    ] {
+        refused_as_running_others(name);
+    }
+}

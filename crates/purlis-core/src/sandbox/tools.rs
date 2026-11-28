@@ -2914,6 +2914,40 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "rw-min",
     "rw-max",
     "cronitor",
+    // The interpreters and runtimes #7964 names beside REFUSED_NAMES' own, refused on this
+    // list and not on that one, as `jshell` and `irb` were not (a persona may still declare
+    // one in a reviewed line): each runs the code, the script or the module it is handed.
+    // `kotlin`, `scala`, `groovy`, `clojure`, `boot`, `elixir`, `erl`, `escript`, `ghc`
+    // (`-e`, and Template Haskell in any build), `runghc`, `crystal`, `nim`, `v`, `dart`,
+    // `tcc` (`-run`), `mono`, the WebAssembly runtimes `wasmtime`, `wasmer` and `wasm3`,
+    // the JavaScript engines `qjs`, `jsc`, `d8`, `hermes`, `rhino` and `jjs`, and `frida`,
+    // which spawns the program it is named and runs a script in it.
+    "kotlin",
+    "scala",
+    "groovy",
+    "clojure",
+    "boot",
+    "elixir",
+    "erl",
+    "escript",
+    "ghc",
+    "runghc",
+    "crystal",
+    "nim",
+    "v",
+    "dart",
+    "tcc",
+    "mono",
+    "wasmtime",
+    "wasmer",
+    "wasm3",
+    "qjs",
+    "jsc",
+    "d8",
+    "hermes",
+    "rhino",
+    "jjs",
+    "frida",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
